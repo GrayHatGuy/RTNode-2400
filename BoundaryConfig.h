@@ -221,9 +221,9 @@ static void config_send_html() {
     }
     html += F("</select>");
 
-    // Spreading Factor — dropdown 6-12
+    // Spreading Factor — dropdown 5-12
     html += F("<label>Spreading Factor</label><select name='sf'>");
-    for (int sf = 6; sf <= 12; sf++) {
+    for (int sf = 5; sf <= 12; sf++) {
         html += F("<option value='");
         html += String(sf);
         html += "'";
