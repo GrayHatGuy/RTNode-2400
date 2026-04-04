@@ -2,12 +2,6 @@
 *.hex
 *.pyc
 TODO
-rnodethv4_firmware.bin
-rtnode_heltecv4_firmware.bin
-rtnode_heltec_v4.bin
-rnodethv3_firmware.bin
-rtnode_heltecv3_firmware.bin
-rtnode_heltec_v3.bin
 .firmware_cache/
 Release/*.hex
 Release/*.zip
@@ -16,3 +10,8 @@ Console/build
 build/*
 .pio/*
 .vscode/*
+# Allow specific binaries even if they are in an ignored folder
+!**/*.bin
+# Allow specific binaries even if they are in an ignored folder
+!**/*.zip
+
