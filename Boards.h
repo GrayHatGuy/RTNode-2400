@@ -506,7 +506,11 @@
       #define HAS_CONSOLE true
       #define HAS_WIFI true
       #define HAS_BLUETOOTH false
-      #define HAS_BLE true
+      #ifdef BOUNDARY_MODE
+        #define HAS_BLE false
+      #else
+        #define HAS_BLE true
+      #endif
       #define HAS_PMU true
       #define HAS_NP false
       #define HAS_SD false
@@ -542,9 +546,16 @@
         #define HAS_RF_SWITCH_RX_TX true
         const int pin_rxen = 21;
         const int pin_txen = 10;
-        
+
         const int pin_busy = 36;
         const int pin_dio = 9;
+        const int pin_tcxo_enable = -1;
+      #elif MODEM == LR1121
+        #define DIO2_AS_RF_SWITCH false
+        #define HAS_BUSY true
+        #define HAS_TCXO true
+        const int pin_busy = 34;
+        const int pin_dio = 36;
         const int pin_tcxo_enable = -1;
       #else
         const int pin_dio = 9;

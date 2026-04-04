@@ -8,6 +8,7 @@
 
 #include <ArduinoJson.h>
 
+#include <algorithm>
 #include <map>
 #include <vector>
 #include <set>

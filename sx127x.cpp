@@ -82,6 +82,7 @@ sx127x::sx127x() :
 
 void sx127x::setSPIFrequency(uint32_t frequency) { _spiSettings = SPISettings(frequency, MSBFIRST, SPI_MODE0); }
 void sx127x::setPins(int ss, int reset, int dio0, int busy) { _ss = ss; _reset = reset; _dio0 = dio0; _busy = busy; }
+void sx127x::pollDio0() { /* no deferred DIO0 handling needed for SX127x */ }
 uint8_t ISR_VECT sx127x::readRegister(uint8_t address) { return singleTransfer(address & 0x7f, 0x00); }
 void sx127x::writeRegister(uint8_t address, uint8_t value) { singleTransfer(address | 0x80, value); }
 void sx127x::standby() { writeRegister(REG_OP_MODE_7X, MODE_LONG_RANGE_MODE_7X | MODE_STDBY_7X); }

@@ -128,6 +128,10 @@ void sx128x::handleDio0Rise() {
     if (_receive_callback) { _receive_callback(_rxPacketLength); }
 }
 
+void sx128x::pollDio0() {
+    // No deferred DIO0 handling required for SX1280; onDio0Rise does the work directly.
+}
+
 bool sx128x::preInit() {
   pinMode(_ss, OUTPUT);
   digitalWrite(_ss, HIGH);
