@@ -29,9 +29,12 @@
 #endif
 #include <stddef.h>
 
-#if MODEM == SX1262 || MODEM == LR1121
+#if MODEM == SX1262
 #include "sx126x.h"
 sx126x *LoRa = &sx126x_modem;
+#elif MODEM == LR1121
+#include "lr1121.h"
+lr1121 *LoRa = &lr1121_modem;
 #elif MODEM == SX1276 || MODEM == SX1278
 #include "sx127x.h"
 sx127x *LoRa = &sx127x_modem;

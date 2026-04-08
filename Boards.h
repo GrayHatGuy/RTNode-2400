@@ -691,7 +691,9 @@
 
     #elif BOARD_MODEL == BOARD_XIAO_S3
       #define IS_ESP32S3 true
-      #define MODEM SX1262
+      #ifndef MODEM
+        #define MODEM SX1262
+      #endif
       #define DIO2_AS_RF_SWITCH true
       #define HAS_BUSY true
       #define HAS_TCXO true
