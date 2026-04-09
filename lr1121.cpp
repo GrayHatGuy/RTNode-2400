@@ -1,7 +1,6 @@
 // Copyright Sandeep Mistry, Mark Qvist and Jacob Eva.
 // Licensed under the MIT license.
-//
-//
+
 
 #include "Boards.h"
 
@@ -20,52 +19,51 @@
 
 // ============================================================
 // LR1121 SPI command opcodes (16-bit, MSB first)
-// Source: LR1121 datasheet LR1121_v1_1.pdf Section 7.2  
+// Source: LR1121 datasheet LR1121_v1_2.pdf  
 // ============================================================
 
 // --- System group (0x01xx) ---
-#define OP_GET_STATUS_11X           0x0100
-#define OP_GET_VERSION_11X          0x0101
-#define OP_WRITE_REGMEM32_11X       0x0105  // Write 32-bit aligned registers
-#define OP_READ_REGMEM32_11X        0x0106  // Read  32-bit aligned registers
-#define OP_WRITE_BUFFER8_11X        0x0109  // Write TX FIFO (byte-addressed)
-#define OP_READ_BUFFER8_11X         0x010A  // Read  RX FIFO (byte-addressed)
-#define OP_GET_ERRORS_11X           0x010D
-#define OP_CLEAR_ERRORS_11X         0x010E
-#define OP_SET_DIO_IRQ_PARAMS_11X   0x0113  // Configure DIO IRQ masks
-#define OP_GET_IRQ_STATUS_11X       0x0115  // Returns 4-byte IRQ status
-#define OP_CLEAR_IRQ_11X            0x0116  // Write 4-byte mask to clear
-#define OP_SET_TCXO_MODE_11X        0x0118  // Enable/configure TCXO
-#define OP_SET_SLEEP_11X            0x011B
-#define OP_SET_STANDBY_11X          0x011C  // *Param: 0x00=RC, 0x01=XOSC
-#define OP_SET_REGMODE_11X          0x011D  // 0x00=LDO, 0x01=DC-DC
-#define OP_SET_FS_11X               0x011E  // Enter frequency synthesis mode
-#define OP_CALIBRATE_11X            0x011F  // Calibrate subsystems (bitmask)
-#define OP_CALIBRATE_IMAGE_11X      0x0120  // Image calibration for band
-#define OP_SET_DIO_AS_RF_SWITCH_11X 0x012C  // Map DIOs to TX/RX RF switch
+#define OP_GET_STATUS_11X           0x0100  //o
+#define OP_GET_VERSION_11X          0x0101  //o
+#define OP_WRITE_REGMEM32_11X       0x0105  //o Write 32-bit aligned registers
+#define OP_READ_REGMEM32_11X        0x0106  //o Read  32-bit aligned registers
+#define OP_WRITE_BUFFER8_11X        0x0109  //o Write TX FIFO (byte-addressed)
+#define OP_READ_BUFFER8_11X         0x010A  //o Read  RX FIFO (byte-addressed)
+#define OP_GET_ERRORS_11X           0x010D  //o
+#define OP_CLEAR_ERRORS_11X         0x010E  //o
+#define OP_SET_DIO_IRQ_PARAMS_11X   0x0113  //o Configure DIO IRQ masks
+#define OP_GET_IRQ_STATUS_11X       0x0115  //o Returns 4-byte IRQ status
+#define OP_CLEAR_IRQ_11X            0x0116  //0114 0117g Write 4-byte mask to clear
+#define OP_SET_TCXO_MODE_11X        0x0117  //oo Enable/configure TCXO
+#define OP_SET_SLEEP_11X            0x011B  //o
+#define OP_SET_STANDBY_11X          0x011C  //o Param: 0x00=RC, 0x01=XOSC
+#define OP_SET_REGMODE_11X          0x0110  //o
+#define OP_SET_FS_11X               0x011E  //o Enter frequency synthesis mode
+#define OP_CALIBRATE_11X            0x010F  //oo Calibrate subsystems (bitmask)
+#define OP_CALIBRATE_IMAGE_11X      0x0111  //o Image calibration for band
+#define OP_SET_DIO_AS_RF_SWITCH_11X 0x0112  //o Map DIOs to TX/RX RF switch
 
 // --- Radio group (0x02xx) ---
-#define OP_RESET_STATS_11X          0x0200
-#define OP_GET_STATS_11X            0x0201
-#define OP_GET_PACKET_TYPE_11X      0x0202
-#define OP_GET_RX_BUFFER_STATUS_11X 0x0203
-#define OP_GET_PACKET_STATUS_11X    0x0204  // Returns RSSI, SNR, signal RSSI
-#define OP_GET_RSSI_INST_11X        0x0205  // Instantaneous RSSI
-#define OP_SET_GFSK_SYNC_WORD_11X   0x0206  // (not used in LoRa mode)
-#define OP_SET_LORA_PUBLIC_NW_11X   0x020B  // Toggle public/private sync word
-#define OP_SET_RX_11X               0x020C  // Start continuous/timeout RX
-#define OP_SET_TX_11X               0x020D  // Start TX with timeout
-#define OP_SET_RF_FREQ_11X          0x020E  // Set RF frequency (4 bytes PLL word)
-#define OP_AUTOSTACK_A2B_11X        0x020F  // (internal use)
-#define OP_SET_PACKET_TYPE_11X      0x0210  // 0x00=GFSK, 0x01=LoRa
-#define OP_SET_MODULATION_PARAMS_11X 0x0211 // SF, BW, CR, LDRO
-#define OP_SET_PACKET_PARAMS_11X    0x0212  // Preamble, header, CRC, IQ
-#define OP_SET_TX_PARAMS_11X        0x0213  // Power level, ramp time
-#define OP_SET_PA_CONFIG_11X        0x0214  // PA select, supply, duty-cycle
-#define OP_SET_RX_TX_FALLBACK_11X   0x0215  // Post-TX/RX fallback mode
-#define OP_SET_RX_DUTY_CYCLE_11X    0x0218  // RX duty-cycle (Rx then sleep)
-#define OP_SET_CAD_PARAMS_11X       0x0219  // CAD configuration
-#define OP_SET_BUFFER_BASE_ADDR_11X 0x021A  // TX/RX base addresses
+#define OP_RESET_STATS_11X          0x0200  //o
+#define OP_GET_STATS_11X            0x0201  //o
+#define OP_GET_PACKET_TYPE_11X      0x0202  //o
+#define OP_GET_RX_BUFFER_STATUS_11X 0x0203  //o 
+#define OP_GET_PACKET_STATUS_11X    0x0204  //o Returns RSSI, SNR, signal RSSI
+#define OP_GET_RSSI_INST_11X        0x0205  //o Instantaneous RSSI
+#define OP_SET_GFSK_SYNC_WORD_11X   0x0206  //o (not used in LoRa mode)
+#define OP_SET_LORA_PUBLIC_NW_11X   0x0208  //0208  Toggle public/private sync word
+#define OP_SET_RX_11X               0x0209  //0209 Start continuous/timeout RX
+#define OP_SET_TX_11X               0x020A  //020A Start TX with timeout
+#define OP_SET_RF_FREQ_11X          0x020B  //020B Set RF frequency (4 bytes PLL word)
+#define OP_SET_PACKET_TYPE_11X      0x020E  //020E 0x00=GFSK, 0x01=LoRa
+#define OP_SET_MODULATION_PARAMS_11X 0x020F //020F SF, BW, CR, LDRO
+#define OP_SET_PACKET_PARAMS_11X    0x0210  //0210 Preamble, header, CRC, IQ
+#define OP_SET_TX_PARAMS_11X        0x0211  //0211 Power level, ramp time
+#define OP_SET_PA_CONFIG_11X        0x0215  //0215 PA select, supply, duty-cycle
+#define OP_SET_RX_TX_FALLBACK_11X   0x0213  //0213 Post-TX/RX fallback mode
+#define OP_SET_RX_DUTY_CYCLE_11X    0x0214  //0214 RX duty-cycle (Rx then sleep)
+#define OP_SET_CAD_PARAMS_11X       0x020D  //020D CAD configuration
+
 
 
 // ============================================================

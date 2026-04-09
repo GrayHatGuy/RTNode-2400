@@ -1,8 +1,7 @@
 // Copyright Sandeep Mistry, Mark Qvist and Jacob Eva.
 // Licensed under the MIT license.
 //
-// lr1121.h — Standalone LR1121 driver header for comparison against sx126x.h.
-// NOT linked into the build.
+// lr1121.h — Standalone LR1121 driver header 
 
 #ifndef LR1121_H
 #define LR1121_H
