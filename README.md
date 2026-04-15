@@ -1,5 +1,8 @@
 # RTNode-Reticulum Transport Node 
 
+## NOTICE: This repo has been ***!!!!Depricated!!!!***
+## See [RTNode-2400](https://github.com/GrayHatGuy/RTNode-2400/tree/main) for continued development
+
 A custom firmware for the that operates as a **Transport Node** — in Boundry mode only and bridging a local LoRa radio network with a remote TCP/IP backbone (such as [rmap.world](https://rmap.world)) over WiFi.
 
 The following devices are currently supported with Transport Node Boundary operations.
