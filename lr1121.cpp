@@ -63,6 +63,7 @@
 #define OP_SET_RX_TX_FALLBACK_11X   0x0213  //0213 Post-TX/RX fallback mode
 #define OP_SET_RX_DUTY_CYCLE_11X    0x0214  //0214 RX duty-cycle (Rx then sleep)
 #define OP_SET_CAD_PARAMS_11X       0x020D  //020D CAD configuration
+#define OP_SET_BUFFER_BASE_ADDR_11X 0x021C  //021C Set TX/RX buffer base addresses (2 bytes: tx_base, rx_base)
 
 
 
