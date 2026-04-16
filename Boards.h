@@ -47,6 +47,7 @@
   #define MODEL_A6            0xA6 // T3S3, 868 MHz with SX1262
   #define MODEL_AA            0xAA // T3S3, 868 MHz with SX1276
   #define MODEL_AC            0xAC // T3S3, 2.4 GHz with SX1280 and PA
+  #define MODEL_AD            0xAD // T3S3, 2.4 GHz with LR1121 and PA
 
   #define PRODUCT_TBEAM       0xE0 // T-Beam devices
   #define BOARD_TBEAM         0x33
@@ -69,6 +70,7 @@
   #define BOARD_XIAO_S3       0x3E
   #define MODEL_DE            0xDE // Xiao ESP32S3 with Wio-SX1262 module, 433 MHz
   #define MODEL_DD            0xDD // Xiao ESP32S3 with Wio-SX1262 module, 868 MHz
+  #define MODEL_DF            0xDF // Xiao ESP32S3 with LR1121, 2.4 GHz
 
   #define PRODUCT_T32_10      0xB2
   #define BOARD_LORA32_V1_0   0x39
