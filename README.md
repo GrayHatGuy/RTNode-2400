@@ -10,9 +10,7 @@ The following devices are currently supported with Transport Node Boundary opera
 -  **XIAO ESP32SS (ESP32-S3 + SX1262/LR121)**
 -  **LilyGo T3S3-MSVR (ESP32-S3 + SX1280/LR1121)** 
   
-This project was primarily developed with the use of AI assistance.
-
-This project was primarily developed with the use of AI assistance.
+*This project was primarily developed with the use of AI assistance. - in all cases code was reviewed audited and implemented with human hands on kb*  
 
 ```
   Android / Sideband                                             Remote
