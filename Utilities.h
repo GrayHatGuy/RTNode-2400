@@ -1751,7 +1751,7 @@ bool eeprom_model_valid() {
 	#elif BOARD_MODEL == BOARD_RNODE_NG_21
 	if (model == MODEL_A2 || model == MODEL_A7) {
 	#elif BOARD_MODEL == BOARD_T3S3
-	if (model == MODEL_A1 || model == MODEL_A6 || model == MODEL_A5 || model == MODEL_AA || model == MODEL_AC) {
+	if (model == MODEL_A1 || model == MODEL_A6 || model == MODEL_A5 || model == MODEL_AA || model == MODEL_AC || model == MODEL_AD) {
 	#elif BOARD_MODEL == BOARD_HMBRW
 	if (model == MODEL_FF || model == MODEL_FE) {
 	#elif BOARD_MODEL == BOARD_TBEAM
@@ -1763,7 +1763,7 @@ bool eeprom_model_valid() {
 	#elif BOARD_MODEL == BOARD_TBEAM_S_V1
 	if (model == MODEL_DB || model == MODEL_DC) {
 	#elif BOARD_MODEL == BOARD_XIAO_S3
-	if (model == MODEL_DD || model == MODEL_DE) {
+	if (model == MODEL_DD || model == MODEL_DE || model == MODEL_DF) {
 	#elif BOARD_MODEL == BOARD_LORA32_V1_0
 	if (model == MODEL_BA || model == MODEL_BB) {
 	#elif BOARD_MODEL == BOARD_LORA32_V2_0
