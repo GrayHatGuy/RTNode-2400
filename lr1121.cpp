@@ -420,13 +420,17 @@ void lr1121::calibrate(void) {
 }
 
 void lr1121::calibrate_image(long frequency) {
-  // Image calibration band pairs — same frequency ranges as SX126x.
+  // Image calibration band pairs for sub-GHz (SX126x-compatible) and 2.4 GHz (LR1121-specific).
+  // Sub-GHz bytes are encoded as freq_MHz / 4 (truncated to uint8).
+  // 2.4 GHz bytes follow the same encoding (2400/4=0x58, 2500/4=0x71).
+  // Verify {0x58, 0x71} against Semtech LR1121 DataBook (SWRD020) Table 8-33.
   uint8_t image_freq[2] = {0};
-  if      (frequency >= 430E6 && frequency <= 440E6) { image_freq[0] = 0x6B; image_freq[1] = 0x6F; }
-  else if (frequency >= 470E6 && frequency <= 510E6) { image_freq[0] = 0x75; image_freq[1] = 0x81; }
-  else if (frequency >= 779E6 && frequency <= 787E6) { image_freq[0] = 0xC1; image_freq[1] = 0xC5; }
-  else if (frequency >= 863E6 && frequency <= 870E6) { image_freq[0] = 0xD7; image_freq[1] = 0xDB; }
-  else if (frequency >= 902E6 && frequency <= 928E6) { image_freq[0] = 0xE1; image_freq[1] = 0xE9; }
+  if      (frequency >= 430E6  && frequency <= 440E6)  { image_freq[0] = 0x6B; image_freq[1] = 0x6F; }
+  else if (frequency >= 470E6  && frequency <= 510E6)  { image_freq[0] = 0x75; image_freq[1] = 0x81; }
+  else if (frequency >= 779E6  && frequency <= 787E6)  { image_freq[0] = 0xC1; image_freq[1] = 0xC5; }
+  else if (frequency >= 863E6  && frequency <= 870E6)  { image_freq[0] = 0xD7; image_freq[1] = 0xDB; }
+  else if (frequency >= 902E6  && frequency <= 928E6)  { image_freq[0] = 0xE1; image_freq[1] = 0xE9; }
+  else if (frequency >= 2400E6 && frequency <= 2500E6) { image_freq[0] = 0x58; image_freq[1] = 0x71; }
   executeOpcode(OP_CALIBRATE_IMAGE_11X, image_freq, 2);
   waitOnBusy();
 }
@@ -851,8 +855,8 @@ void lr1121::setSpreadingFactor(int sf) {
 }
 
 long lr1121::getSignalBandwidth() {
-  // Bandwidth register codes are identical to SX126x.
   switch (_bw) {
+    // Sub-GHz LoRa BW codes (SX126x-compatible)
     case 0x00: return 7.8E3;
     case 0x01: return 15.6E3;
     case 0x02: return 31.25E3;
@@ -863,6 +867,11 @@ long lr1121::getSignalBandwidth() {
     case 0x08: return 10.4E3;
     case 0x09: return 20.8E3;
     case 0x0A: return 41.7E3;
+    // 2.4 GHz LoRa BW codes (LR1121-specific)
+    case 0x0D: return 200E3;
+    case 0x0E: return 400E3;
+    case 0x0F: return 800E3;
+    case 0x10: return 1600E3;
   }
   return 0;
 }
@@ -878,16 +887,25 @@ void lr1121::handleLowDataRate() {
 void lr1121::optimizeModemSensitivity() { }
 
 void lr1121::setSignalBandwidth(long sbw) {
-  if      (sbw <= 7.8E3)    { _bw = 0x00; }
-  else if (sbw <= 10.4E3)   { _bw = 0x08; }
-  else if (sbw <= 15.6E3)   { _bw = 0x01; }
-  else if (sbw <= 20.8E3)   { _bw = 0x09; }
-  else if (sbw <= 31.25E3)  { _bw = 0x02; }
-  else if (sbw <= 41.7E3)   { _bw = 0x0A; }
-  else if (sbw <= 62.5E3)   { _bw = 0x03; }
-  else if (sbw <= 125E3)    { _bw = 0x04; }
-  else if (sbw <= 250E3)    { _bw = 0x05; }
-  else                      { _bw = 0x06; }
+  if (_frequency >= 2400E6) {
+    // 2.4 GHz RF path: use LR1121-specific BW register codes
+    if      (sbw <= 200E3)  { _bw = 0x0D; }
+    else if (sbw <= 400E3)  { _bw = 0x0E; }
+    else if (sbw <= 800E3)  { _bw = 0x0F; }
+    else                    { _bw = 0x10; }
+  } else {
+    // Sub-GHz RF path: SX126x-compatible BW codes
+    if      (sbw <= 7.8E3)   { _bw = 0x00; }
+    else if (sbw <= 10.4E3)  { _bw = 0x08; }
+    else if (sbw <= 15.6E3)  { _bw = 0x01; }
+    else if (sbw <= 20.8E3)  { _bw = 0x09; }
+    else if (sbw <= 31.25E3) { _bw = 0x02; }
+    else if (sbw <= 41.7E3)  { _bw = 0x0A; }
+    else if (sbw <= 62.5E3)  { _bw = 0x03; }
+    else if (sbw <= 125E3)   { _bw = 0x04; }
+    else if (sbw <= 250E3)   { _bw = 0x05; }
+    else                     { _bw = 0x06; }
+  }
   handleLowDataRate();
   setModulationParams(_sf, _bw, _cr, _ldro);
   optimizeModemSensitivity();
