@@ -7,7 +7,7 @@ The following devices are currently supported with Transport Node Boundary opera
 
 - **Heltec WiFi LoRa 32 V3**
 - **Heltec WiFi LoRa 32 V4**
--  **XIAO ESP32SS (ESP32-S3 + SX1262)**
+-  **XIAO ESP32SS (ESP32-S3 + SX1262/LR121)**
 -  **LilyGo T3S3-MSVR (ESP32-S3 + SX1280/LR1121)** 
   
 This project was primarily developed with the use of AI assistance.
