@@ -2266,11 +2266,19 @@ void validate_status() {
         Serial.write("[Boundary] Loaded LoRa config from EEPROM\r\n");
       } else {
         // Use sensible defaults if no config saved yet
-        lora_freq = 914875000;
-        lora_bw   = 125000;
-        lora_sf   = 10;
-        lora_cr   = 5;
-        lora_txp  = 28;
+        #if MODEM == SX1280 || MODEM == LR1121
+          lora_freq = 2400000000UL;
+          lora_bw   = 203125;
+          lora_sf   = 7;
+          lora_cr   = 5;
+          lora_txp  = 13;
+        #else
+          lora_freq = 914875000;
+          lora_bw   = 125000;
+          lora_sf   = 10;
+          lora_cr   = 5;
+          lora_txp  = 28;
+        #endif
         Serial.write("[Boundary] No LoRa config in EEPROM, using defaults\r\n");
       }
 
