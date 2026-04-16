@@ -52,7 +52,7 @@ This firmware was designed for the **Heltec WiFi LoRa 32 V4** and expanded to ac
 |  **MCU**     | ESP32-S3 (ESP32-S3FN8) | ESP32-S3 (ESP32-S3FH4R2) | ESP32-S3 (ESP32-S3FH4R2) | ESP32-S3 (ESP32-S3R8) |
 | **Flash**    | 8 MB        | 16 MB       |  4MB (qspi)      |  16MB     |
 | **PSRAM**    | None        | 2 MB (QSPI) |  2MB (qspi)      |  8MB     |
-| **Radio**    | SX1262 | SX1262 + GC1109 PA |  SX1280/LR1121  | SX1262 - WIO shield |
+| **Radio**    | SX1262 | SX1262 + GC1109 PA |  SX1280/LR1121  | SX1262 / LR1121 |
 | **TX Power** | Up to 22 dBm | Up to 28 dBm |  20dBm  |  22dBm   |
 | **Display**  | SSD1306 OLED 128×64 | SSD1306 OLED 128×64 | SSD1306 OLED 128×64 | none |
 | **WiFi**     | 2.4 GHz 802.11 b/g/n | 2.4 GHz 802.11 b/g/n | 2.4 GHz b/g/n Wi-Fi & Bluetooth 5.0 | 2.4GHz b/g/n Wi-Fi and Bluetooth 5.0/Bluetooth Mesh|
