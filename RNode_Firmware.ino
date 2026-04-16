@@ -936,6 +936,7 @@ void setup() {
 
       // Cache this node's destination hash in RTC memory so the captive-portal
       // config page can show it without needing RNS to be running.
+      #ifdef BOUNDARY_MODE
       {
         std::string h = destination.hash().toHex();
         size_t len = h.length();
@@ -944,6 +945,7 @@ void setup() {
         rtc_node_hash_hex[len] = '\0';
         rtc_node_hash_magic = NODE_HASH_RTC_MAGIC;
       }
+      #endif // BOUNDARY_MODE
 
       HEAD("RNS is READY!", RNS::LOG_TRACE);
 #ifdef BOUNDARY_MODE
