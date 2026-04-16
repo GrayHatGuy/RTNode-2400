@@ -71,8 +71,10 @@ The following devices offer RTNode enhanced memory allocation and active portal 
 - heltec_V3_boundary-local             
 - heltec_V4_boundary               
 - heltec_V4_boundary-local            
-- seeed_xiao_esp32s3_boundary
--  seeed_xiao_esp32s3_boundary-local
+- seeed_xiao_esp32s3_lr1121_boundary
+- seeed_xiao_esp32s3_lr1121_boundary-local
+- seeed_xiao_esp32s3_sx1262_boundary
+- seeed_xiao_esp32s3_sx1262_boundary-local
   
 ### Release options
 
