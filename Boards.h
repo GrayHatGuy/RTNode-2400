@@ -515,7 +515,11 @@
       #endif
       #define HAS_PMU true
       #define HAS_NP false
-      #define HAS_SD false
+      #if MODEM == SX1280 || MODEM == LR1121
+        #define HAS_SD true
+      #else
+        #define HAS_SD false
+      #endif
       #define HAS_EEPROM true
 
       #define HAS_INPUT true
@@ -571,6 +575,13 @@
       const int SD_MOSI = 11;
       const int SD_CLK = 14;
       const int SD_CS = 13;
+
+      #if HAS_SD
+        #define SDCARD_MISO SD_MISO
+        #define SDCARD_MOSI SD_MOSI
+        #define SDCARD_SCLK SD_CLK
+        #define SDCARD_CS   SD_CS
+      #endif
 
       #if HAS_NP == false
         #if defined(EXTERNAL_LEDS)

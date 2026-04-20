@@ -196,15 +196,20 @@ void on_receive_packet(const RNS::Bytes& raw, const RNS::Interface& interface) {
     file.write((uint8_t*)line.c_str(), line.length());
     file.close();
   }
-	RNS::Packet packet({RNS::Type::NONE}, raw);
-	if (packet.unpack()) {
-    String line = RNS::getTimeString() + String(" recv: ") + String(packet.dumpString().c_str()) + "\n";
-    File file = SD.open("/tracedetails.txt", FILE_APPEND);
-    if (file) {
-      file.write((uint8_t*)line.c_str(), line.length());
-      file.close();
+#ifndef NDEBUG
+  {
+    RNS::Destination dest({RNS::Type::NONE});
+    RNS::Packet packet(dest, raw);
+    if (packet.unpack()) {
+      String dline = RNS::getTimeString() + String(" recv: ") + String(packet.dumpString().c_str()) + "\n";
+      File dfile = SD.open("/tracedetails.txt", FILE_APPEND);
+      if (dfile) {
+        dfile.write((uint8_t*)dline.c_str(), dline.length());
+        dfile.close();
+      }
     }
-	}
+  }
+#endif  // NDEBUG
 #endif  // HAS_SDCARD
 }
 
@@ -218,15 +223,20 @@ void on_transmit_packet(const RNS::Bytes& raw, const RNS::Interface& interface) 
     file.write((uint8_t*)line.c_str(), line.length());
     file.close();
   }
-	RNS::Packet packet({RNS::Type::NONE}, raw);
-	if (packet.unpack()) {
-    String line = RNS::getTimeString() + String(" send: ") + String(packet.dumpString().c_str()) + "\n";
-    File file = SD.open("/tracedetails.txt", FILE_APPEND);
-    if (file) {
-      file.write((uint8_t*)line.c_str(), line.length());
-      file.close();
+#ifndef NDEBUG
+  {
+    RNS::Destination dest({RNS::Type::NONE});
+    RNS::Packet packet(dest, raw);
+    if (packet.unpack()) {
+      String dline = RNS::getTimeString() + String(" send: ") + String(packet.dumpString().c_str()) + "\n";
+      File dfile = SD.open("/tracedetails.txt", FILE_APPEND);
+      if (dfile) {
+        dfile.write((uint8_t*)dline.c_str(), dline.length());
+        dfile.close();
+      }
     }
-	}
+  }
+#endif  // NDEBUG
 #endif  // HAS_SDCARD
 }
 
@@ -700,6 +710,8 @@ void setup() {
       SD.remove("/tracedetails");
       SD.remove("/tracefile.txt");
       SD.remove("/tracedetails.txt");
+      SD.mkdir("/tables");
+      SD.remove("/tables/destination_table.txt");
       Serial.println("DIR: /");
       File root = SD.open("/");
       File file = root.openNextFile();
@@ -767,6 +779,22 @@ void setup() {
       TRACE(content.toString() + "\r\n");
     }
 #endif  // NDEBUG
+
+#ifdef HAS_SDCARD
+    // Write RNS tables to SD card (runs regardless of NDEBUG)
+    {
+      RNS::Bytes tbl_content;
+      if (filesystem.read_file("/destination_table", tbl_content) > 0) {
+        std::string str = tbl_content.toString();
+        File tbl_file = SD.open("/tables/destination_table.txt", FILE_WRITE);
+        if (tbl_file) {
+          tbl_file.write((const uint8_t*)str.c_str(), str.length());
+          tbl_file.close();
+          Serial.println("SD: wrote /tables/destination_table.txt");
+        }
+      }
+    }
+#endif  // HAS_SDCARD
 
     // CBA Start RNS
     if (hw_ready) {
