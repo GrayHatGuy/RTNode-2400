@@ -428,27 +428,39 @@
     },
   };
 
+  // Tracks which assets are mirrored for each released version (from versions.json).
+  // Older releases live under firmware/<tag>/ because GitHub's release-download
+  // URLs do not expose CORS headers and so cannot be fetched from the browser.
+  // Run docs/mirror_releases.py to refresh the mirror.
+  const versionAssets = new Map();
+
   function getBinUrl(fw, isUpdate) {
     const name = isUpdate ? fw.updateName : fw.fullName;
     const ver  = versionSelect.value;
-    return ver === 'latest'
-      ? `firmware/${name}`
-      : `https://github.com/${REPO}/releases/download/${ver}/${name}`;
+    if (ver === 'latest') return `firmware/${name}`;
+    return `firmware/${ver}/${name}`;
   }
 
-  // ── Load release versions from GitHub API ─────────────────────────────────
+  function assetAvailable(ver, name) {
+    if (ver === 'latest') return true;
+    const set = versionAssets.get(ver);
+    return !!(set && set.has(name));
+  }
+
+  // ── Load mirrored release versions from versions.json ─────────────────────
   (async () => {
     try {
-      const res  = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=15`);
+      const res = await fetch('firmware/versions.json', { cache: 'no-cache' });
       if (!res.ok) return;
-      const releases = await res.json();
-      for (const r of releases) {
+      const versions = await res.json();
+      for (const v of versions) {
+        versionAssets.set(v.tag, new Set(v.assets || []));
         const opt = document.createElement('option');
-        opt.value       = r.tag_name;
-        opt.textContent = `${r.tag_name}${r.name && r.name !== r.tag_name ? ' — ' + r.name : ''}`;
+        opt.value       = v.tag;
+        opt.textContent = `${v.tag}${v.name && v.name !== v.tag ? ' — ' + v.name : ''}`;
         versionSelect.appendChild(opt);
       }
-    } catch (_) { /* network unavailable — latest (bundled) remains the only option */ }
+    } catch (_) { /* manifest missing — latest (bundled) remains the only option */ }
   })();
 
   // ── Detection — mirrors detect_board() in flash.py ─────────────────────────
@@ -550,9 +562,28 @@
       const boardKey    = detectBoard(chipName, features);
       detectedFw        = FIRMWARE[boardKey];
 
+      // Extra diagnostics — helpful when triaging boot-loop reports.
+      // readFlashId() returns 24 bits: low byte = JEDEC manufacturer,
+      // upper 16 bits = device ID (memory type + capacity).
+      let chipDesc  = chipName;
+      let flashIdHex = '?';
+      try {
+        if (typeof loader.chip.getChipDescription === 'function') {
+          chipDesc = await loader.chip.getChipDescription(loader);
+        }
+      } catch (_) {}
+      try {
+        const fid = await loader.readFlashId();
+        const mfg = fid & 0xff;
+        const dev = (fid >> 8) & 0xffff;
+        flashIdHex = `mfg=0x${mfg.toString(16).padStart(2, '0')} dev=0x${dev.toString(16).padStart(4, '0')}`;
+      } catch (_) {}
+
       log(`Chip:       ${chipName}`);
+      log(`Variant:    ${chipDesc}`);
       log(`Features:   ${features.join(', ')}`);
       log(`Flash size: ${flashSize}`);
+      log(`Flash ID:   ${flashIdHex}`);
       log(`Board:      ${detectedFw.label}`);
 
       setBadge('ok', `&#10003; ${detectedFw.label} &mdash; Flash: ${flashSize} &mdash; Ready to flash`);
@@ -583,6 +614,14 @@
     try {
       const fw     = detectedFw;
       const ver    = versionSelect.value;
+      const assetName = currentIsUpdate ? fw.updateName : fw.fullName;
+      if (!assetAvailable(ver, assetName)) {
+        const other = currentIsUpdate ? 'Full install' : 'Update firmware';
+        throw new Error(
+          `Release ${ver} does not include ${assetName}. ` +
+          `Try the "${other}" mode, or pick a different version.`
+        );
+      }
       const binUrl = getBinUrl(fw, currentIsUpdate);
       const addr   = currentIsUpdate ? fw.updateAddr : fw.fullAddr;
 

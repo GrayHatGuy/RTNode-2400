@@ -86,7 +86,12 @@ BOARD_PROFILES = {
         "name":      "Heltec WiFi LoRa 32 V4",
         "chip":      "ESP32-S3",   # matches esptool "Chip is ESP32-S3 ..."
         "baud_rate": "921600",
-        "flash_mode": "qio",  # ESP32-S3 PSRAM requires QIO — DIO disables PSRAM
+        # Image header is built as DIO (works on every ESP32-S3 flash variant).
+        # The IDF 2nd-stage bootloader auto-upgrades the SPI controller to QIO at
+        # runtime via bootloader_enable_qio_mode() when the chip's SFDP indicates
+        # support. Hard-coding qio here would brick boards whose flash isn't
+        # wired/strapped for QIO. Must match platformio.ini board_build.flash_mode.
+        "flash_mode": "dio",
         "flash_variants": {
             "16MB": {
                 "pio_env":      "rtnode_heltec_v4",
