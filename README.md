@@ -8,6 +8,7 @@ The following devices are currently supported with Transport Node Boundary opera
 - **Heltec WiFi LoRa 32 V3**
 - **Heltec WiFi LoRa 32 V4**
 -  **XIAO ESP32SS (ESP32-S3 + SX1262/LR121)**
+-  **XIAO nrf52840 (SX1262)**
 -  **LilyGo T3S3-MSVR (ESP32-S3 + SX1280/LR1121)** 
   
 *This project was primarily developed with the use of AI assistance code was reviewed audited and implemented by human hands on kb*  
@@ -42,7 +43,7 @@ Built on [microReticulum](https://github.com/attermann/microReticulum) (a C++ po
 
 ## Hardware
 
-This firmware was designed for the **Heltec WiFi LoRa 32 V4** and expanded to accomodate the **XIAO ESP32SS with a WIO SX1262 shield** and **LilyGo T3S3-MSVR** (ESP32 + SX1280). This board was chosen for its 2MB PSRAM (4MB T3S3 and 8MB for xiao esp32s3) with LoRa capabilities. While the V3 is supported, it uses the ESP32-S3FN8 which has **no PSRAM**. The firmware **detects PSRAM at runtime** and allocates the TLSF memory pool from SPIRAM when available, falling back to internal SRAM (~170 KB) on boards without PSRAM.
+This firmware was designed for the **Heltec WiFi LoRa 32 V4** and expanded to accomodate the **XIAO ESP32SS with a WIO SX1262 shield**, **XIAO nrf52840 with a WIO SX1262 shield** and **LilyGo T3S3-MSVR** (ESP32 + SX1280). This board was chosen for its 2MB PSRAM (4MB T3S3 and 8MB for xiao esp32s3) with LoRa capabilities. While the V3 is supported, it uses the ESP32-S3FN8 which has **no PSRAM**. The firmware **detects PSRAM at runtime** and allocates the TLSF memory pool from SPIRAM when available, falling back to internal SRAM (~170 KB) on boards without PSRAM.
 
 
 | Component    |  Heltec V3  |  Heltec V4  |    T3S3 v1.2    |  Xiao esp32s3 - *Plus Sense Board* |
