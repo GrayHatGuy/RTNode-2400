@@ -72,6 +72,10 @@
   #define MODEL_DD            0xDD // Xiao ESP32S3 with Wio-SX1262 module, 868 MHz
   #define MODEL_DF            0xDF // Xiao ESP32S3 with LR1121, 2.4 GHz
 
+  #define PRODUCT_XIAO_NRF    0xEC
+  #define BOARD_XIAO_NRF      0x52 // Seeed XIAO nRF52840 with Wio-SX1262 module
+  #define MODEL_E0            0xE0 // Xiao nRF52840 with Wio-SX1262 module, 868 MHz
+
   #define PRODUCT_T32_10      0xB2
   #define BOARD_LORA32_V1_0   0x39
   #define MODEL_BA            0xBA // LilyGO T3 v1.0, 433 MHz
@@ -925,6 +929,44 @@
       const int DISPLAY_CLK = PIN_T114_TFT_SCK;
       const int DISPLAY_BL_PIN = PIN_T114_TFT_BLGT;
       const int DISPLAY_RST = PIN_T114_TFT_RST;
+
+    #elif BOARD_MODEL == BOARD_XIAO_NRF
+      #define HAS_EEPROM false
+      #define HAS_DISPLAY false
+      #define HAS_BLUETOOTH false
+      #define HAS_BLE true
+      #define HAS_CONSOLE false
+      #define HAS_PMU false
+      #define HAS_NP false
+      #define HAS_SD false
+      #define HAS_TCXO false
+      #define HAS_BUSY true
+      #define HAS_INPUT false
+      #define DIO2_AS_RF_SWITCH true
+      #define CONFIG_UART_BUFFER_SIZE 6144
+      #define CONFIG_QUEUE_SIZE 6144
+      #define CONFIG_QUEUE_MAX_LENGTH 200
+      #define EEPROM_SIZE 296
+      #define EEPROM_OFFSET EEPROM_SIZE-EEPROM_RESERVED
+      #define BLE_MANUFACTURER "Seeed"
+      #define BLE_MODEL "XIAO nRF52840"
+
+      // SPI pins for Wio-SX1262 module (D8/D9/D10)
+      const int pin_sclk = 8;
+      const int pin_mosi = 10;
+      const int pin_miso = 9;
+
+      // SX1262 control pins (D0-D3)
+      const int pin_reset = 0;
+      const int pin_dio   = 1;
+      const int pin_busy  = 2;
+      const int pin_cs    = 3;
+
+      const int pin_tcxo_enable = -1;
+
+      // Built-in RGB LEDs (active HIGH on XIAO nRF52840)
+      const int pin_led_rx = LED_BLUE;
+      const int pin_led_tx = LED_GREEN;
 
     #else
       #error An unsupported nRF board was selected. Cannot compile RNode firmware.

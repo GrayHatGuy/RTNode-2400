@@ -386,6 +386,14 @@ extern RNS::Reticulum reticulum;
 		void led_tx_off() { digitalWrite(pin_led_tx, LED_OFF); }
 		void led_id_on()  { }
 		void led_id_off() { }
+	#elif BOARD_MODEL == BOARD_XIAO_NRF
+		// XIAO nRF52840 LEDs are active HIGH (LED_STATE_ON = 1)
+		void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
+		void led_rx_off() { digitalWrite(pin_led_rx, LOW); }
+		void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
+		void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+		void led_id_on()  { }
+		void led_id_off() { }
 	#endif
 #endif
 
