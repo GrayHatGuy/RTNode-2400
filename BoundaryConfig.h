@@ -34,7 +34,7 @@ static bool config_portal_active = false;
 static WebServer* config_server = nullptr;
 static DNSServer* config_dns    = nullptr;
 
-static const char CONFIG_AP_SSID[] = "RNode-Boundary-Setup";
+static const char CONFIG_AP_SSID[] = "RTNode-Setup";
 static const uint16_t DNS_PORT = 53;
 static const uint16_t HTTP_PORT = 80;
 
@@ -114,7 +114,7 @@ static void config_send_html() {
     String html = F(
         "<!DOCTYPE html><html><head>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>RNode Boundary Setup</title>"
+        "<title>RTNode Setup</title>"
         "<style>"
         "body{font-family:sans-serif;background:#1a1a2e;color:#e0e0e0;margin:0;padding:16px;}"
         "h1{color:#e94560;font-size:1.4em;margin:0 0 8px;}"
@@ -137,7 +137,7 @@ static void config_send_html() {
         ".node-hash code{font-family:monospace;font-size:0.95em;color:#7ecfff;"
         "word-break:break-all;letter-spacing:0.05em;}"
         "</style></head><body>"
-        "<h1>&#x1f4e1; RNode Boundary Node</h1>"
+        "<h1>&#x1f4e1; RTNode</h1>"
     );
 
     // ── Node public hash ──
@@ -150,6 +150,19 @@ static void config_send_html() {
     html += F("</code></div>");
 
     html += F("<form method='POST' action='/save'>");
+
+    // ── Node Name Section ──
+    html += F(
+        "<h2>&#x1f3f7; Node Name</h2>"
+        "<p class='note'>A human-readable name for this node, shown in advertisements and on maps "
+        "such as <a href='https://rmap.world' target='_blank' style='color:#7ecfff'>rmap.world</a>. "
+        "Leave blank to auto-generate a name from the node hash.</p>"
+        "<label>Name</label>"
+        "<input name='node_name' maxlength='32' placeholder='e.g. My RNode' value='"
+    );
+    html += String(boundary_state.node_name);
+    html += F("'>");
+
     html += F(
         "<h2>&#x1f4f6; WiFi Network</h2>"
         "<label>WiFi</label>"
@@ -204,7 +217,7 @@ static void config_send_html() {
     html += F(
         "<h2>&#x1f4e1; Local TCP Server (optional)</h2>"
         "<p class='note'>Run a TCP server on the same WiFi network so local devices can connect. "
-        "Uses Access Point mode (does not forward announces).</p>"
+        "Uses Gateway mode (forwards announces to and from local TCP clients).</p>"
         "<label>Local TCP Server</label>"
         "<select name='ap_tcp_en'>"
     );
@@ -296,6 +309,26 @@ static void config_send_html() {
     html += F(" dBm (with PA)</p>");
     #endif
 
+    // Airtime / duty-cycle limits — pause TX when measured airtime
+    // exceeds these thresholds. 0 = disabled. Range 0–25% with 0.1%
+    // resolution. Common preset: EU868 = 1% on the 1hr limit.
+    char st_al_str[16];
+    char lt_al_str[16];
+    dtostrf(boundary_state.st_airtime_limit * 100.0f, 1, 1, st_al_str);
+    dtostrf(boundary_state.lt_airtime_limit * 100.0f, 1, 1, lt_al_str);
+    html += F("<div class='row'>");
+    html += F("<div><label>15s limit (%)</label>"
+              "<input name='stal' type='number' step='0.1' min='0' max='25' value='");
+    html += String(st_al_str);
+    html += F("'></div>");
+    html += F("<div><label>1hr limit (%)</label>"
+              "<input name='ltal' type='number' step='0.1' min='0' max='25' value='");
+    html += String(lt_al_str);
+    html += F("'></div>");
+    html += F("</div>");
+    html += F("<p class='note'>Pause TX when measured LoRa airtime exceeds these limits. "
+              "0 = disabled. EU868 regulations suggest 1% on the 1hr limit.</p>");
+
     // ── IFAC (Interface Access Code) Section ──
     html += F(
         "<h2>&#x1f512; Network Access (IFAC)</h2>"
@@ -321,6 +354,66 @@ static void config_send_html() {
     html += F("<input name='ifac_pass' type='password' maxlength='32' placeholder='Shared secret' value='");
     html += String(boundary_state.ifac_passphrase);
     html += F("'>");
+
+    // ── Device Advertisement Section ──
+    html += F(
+        "<h2>&#x1f4cd; Device Advertisement</h2>"
+        "<p class='note'>Advertise this node and its parameters on the Reticulum network. "
+        "Maps such as <a href='https://rmap.world' target='_blank' style='color:#7ecfff'>rmap.world</a> "
+        "use these announcements to automatically place a pin for the node. "
+        "Disabled by default; enable only if you want this node to be publicly listed.</p>"
+        "<label>Advertise Device</label>"
+        "<select name='advert_en'>"
+    );
+    html += F("<option value='0'");
+    if (!boundary_state.advert_enabled) html += F(" selected");
+    html += F(">Disabled</option>");
+    html += F("<option value='1'");
+    if (boundary_state.advert_enabled) html += F(" selected");
+    html += F(">Enabled</option>");
+    html += F("</select>");
+
+    // Latitude / Longitude — pre-populate with current values, but keep
+    // the inputs blank when the user has not yet set coordinates so the
+    // browser placeholder hint is visible.
+    char lat_str[32];
+    char lon_str[32];
+    lat_str[0] = '\0';
+    lon_str[0] = '\0';
+    if (boundary_state.advert_enabled ||
+        boundary_state.advert_lat != 0.0 ||
+        boundary_state.advert_lon != 0.0) {
+        dtostrf(boundary_state.advert_lat, 1, 6, lat_str);
+        dtostrf(boundary_state.advert_lon, 1, 6, lon_str);
+    }
+
+    html += F("<div class='row'>");
+    html += F("<div><label>Latitude (&deg;)</label>");
+    html += F("<input id='advert_lat' name='advert_lat' type='text' inputmode='decimal' "
+              "placeholder='e.g. 37.774929' value='");
+    html += String(lat_str);
+    html += F("'></div>");
+    html += F("<div><label>Longitude (&deg;)</label>");
+    html += F("<input id='advert_lon' name='advert_lon' type='text' inputmode='decimal' "
+              "placeholder='e.g. -122.419416' value='");
+    html += String(lon_str);
+    html += F("'></div>");
+    html += F("</div>");
+    html += F("<p class='note'>Decimal degrees, signed. North/East positive, South/West negative. "
+              "Leave both blank to omit coordinates.</p>");
+
+    html += F("<label>Randomize Offset</label>"
+              "<select name='advert_jitter'>");
+    html += F("<option value='0'");
+    if (!boundary_state.advert_jitter) html += F(" selected");
+    html += F(">Disabled</option>");
+    html += F("<option value='1'");
+    if (boundary_state.advert_jitter) html += F(" selected");
+    html += F(">Enabled (~0.5 km / 0.5 mi)</option>");
+    html += F("</select>");
+    html += F("<p class='note'>When enabled, the advertised coordinates are shifted by a "
+              "random offset of approximately half a kilometre (about half a mile) for "
+              "privacy. The exact stored coordinates are not changed.</p>");
 
     // ── Options Section ──
     html += F(
@@ -475,6 +568,43 @@ static void config_handle_save() {
         boundary_state.ifac_enabled = false;
     }
 
+    // ── Device advertisement settings ──
+    boundary_state.advert_enabled = (config_server->arg("advert_en").toInt() == 1);
+
+    // Empty lat/lon strings are treated as "not set" → 0.0. Otherwise parse
+    // and clamp to valid ranges; out-of-range values are silently coerced
+    // to 0.0 rather than rejecting the whole save.
+    String lat_arg = config_server->arg("advert_lat");
+    String lon_arg = config_server->arg("advert_lon");
+    lat_arg.trim();
+    lon_arg.trim();
+    if (lat_arg.length() == 0) {
+        boundary_state.advert_lat = 0.0;
+    } else {
+        double lat_val = lat_arg.toDouble();
+        if (lat_val < -90.0 || lat_val > 90.0 || isnan(lat_val)) {
+            lat_val = 0.0;
+        }
+        boundary_state.advert_lat = lat_val;
+    }
+    if (lon_arg.length() == 0) {
+        boundary_state.advert_lon = 0.0;
+    } else {
+        double lon_val = lon_arg.toDouble();
+        if (lon_val < -180.0 || lon_val > 180.0 || isnan(lon_val)) {
+            lon_val = 0.0;
+        }
+        boundary_state.advert_lon = lon_val;
+    }
+
+    boundary_state.advert_jitter = (config_server->arg("advert_jitter").toInt() == 1);
+
+    // ── Node name ──
+    String node_name_arg = config_server->arg("node_name");
+    node_name_arg.trim();
+    memset(boundary_state.node_name, 0, sizeof(boundary_state.node_name));
+    strncpy(boundary_state.node_name, node_name_arg.c_str(), sizeof(boundary_state.node_name) - 1);
+
     // Save boundary config to EEPROM
     boundary_save_config();
 
@@ -497,6 +627,28 @@ static void config_handle_save() {
 
     int txp_val = config_server->arg("txp").toInt();
     if (txp_val >= 2 && txp_val <= 30) lora_txp = txp_val;
+
+    // Airtime / duty-cycle limits. Empty / out-of-range / 0 = disabled.
+    // boundary_save_config() has already run above, so write the bytes
+    // directly here alongside the other LoRa parameters.
+    {
+        String stal_arg = config_server->arg("stal");
+        String ltal_arg = config_server->arg("ltal");
+        stal_arg.trim();
+        ltal_arg.trim();
+        float st_pct = stal_arg.length() ? (float)stal_arg.toFloat() : 0.0f;
+        float lt_pct = ltal_arg.length() ? (float)ltal_arg.toFloat() : 0.0f;
+        if (st_pct < 0.0f || isnan(st_pct)) st_pct = 0.0f;
+        if (lt_pct < 0.0f || isnan(lt_pct)) lt_pct = 0.0f;
+        if (st_pct > 25.0f) st_pct = 25.0f;
+        if (lt_pct > 25.0f) lt_pct = 25.0f;
+        boundary_state.st_airtime_limit = st_pct / 100.0f;
+        boundary_state.lt_airtime_limit = lt_pct / 100.0f;
+        uint8_t st_byte = (uint8_t)(st_pct * 10.0f + 0.5f);
+        uint8_t lt_byte = (uint8_t)(lt_pct * 10.0f + 0.5f);
+        EEPROM.write(config_addr(ADDR_CONF_ST_AL), st_byte);
+        EEPROM.write(config_addr(ADDR_CONF_LT_AL), lt_byte);
+    }
 
     // Save LoRa config to EEPROM (reuse existing eeprom_conf functions)
     // Write directly since hw_ready may not be set yet

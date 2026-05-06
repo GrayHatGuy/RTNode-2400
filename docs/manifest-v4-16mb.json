@@ -1,0 +1,14 @@
+{
+  "name": "RTNode - Heltec V4 (Update)",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "firmware/rtnode_heltec_v4.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

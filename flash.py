@@ -61,7 +61,8 @@ FLASH_FREQ      = "80m"
 GITHUB_REPO     = "jrl290/RTNode-HeltecV4"
 
 # Runtime state (set automatically during main())
-_flash_mode_override = None   # CLI --flash-mode sets this; otherwise board profile wins
+_flash_mode_override = None    # CLI --flash-mode sets this; otherwise board profile wins
+_detected_flash_size = None    # Actual flash size read from device; overrides board profile
 _esptool_write_verify_support = {}
 
 # Flash addresses for ESP32-S3 Arduino framework
@@ -74,26 +75,45 @@ APP_ADDR        = 0x10000
 # Each board defines its PIO env, flash size, baud rate, firmware binary name,
 # and merged binary name.
 
+# Single archive name released on GitHub — contains every board/flash-size variant.
+FIRMWARE_ARCHIVE   = "rtnode_firmware.zip"
+# Conservative default when flash size can't be detected: 8MB firmware runs on
+# any device (8MB or larger); a 16MB image on an 8MB device crashes at boot.
+DEFAULT_FLASH_SIZE = "8MB"
+
 BOARD_PROFILES = {
     "v4": {
-        "name":            "Heltec WiFi LoRa 32 V4",
-        "pio_env":         "heltec_V4_boundary",
-        "build_dir":       ".pio/build/heltec_V4_boundary",
-        "firmware_bin":    "rnode_firmware_heltec32v4_boundary.bin",
-        "merged_filename": "rtnode_heltec_v4.bin",
-        "flash_size":      "16MB",
-        "baud_rate":       "921600",
-        "flash_mode":      "dio",    # DIO is universally compatible with all flash chips
+        "name":      "Heltec WiFi LoRa 32 V4",
+        "chip":      "ESP32-S3",   # matches esptool "Chip is ESP32-S3 ..."
+        "baud_rate": "921600",
+        # Image header is built as DIO (works on every ESP32-S3 flash variant).
+        # The IDF 2nd-stage bootloader auto-upgrades the SPI controller to QIO at
+        # runtime via bootloader_enable_qio_mode() when the chip's SFDP indicates
+        # support. Hard-coding qio here would brick boards whose flash isn't
+        # wired/strapped for QIO. Must match platformio.ini board_build.flash_mode.
+        "flash_mode": "dio",
+        "flash_variants": {
+            "16MB": {
+                "pio_env":      "rtnode_heltec_v4",
+                "build_dir":    ".pio/build/rtnode_heltec_v4",
+                "firmware_bin": "rtnode_heltec_v4.bin",
+                "merged_bin":   "rtnode_heltec_v4_merged.bin",
+            },
+        },
     },
     "v3": {
-        "name":            "Heltec WiFi LoRa 32 V3",
-        "pio_env":         "heltec_V3_boundary",
-        "build_dir":       ".pio/build/heltec_V3_boundary",
-        "firmware_bin":    "rnode_firmware_heltec32v3.bin",
-        "merged_filename": "rtnode_heltec_v3.bin",
-        "flash_size":      "8MB",
-        "baud_rate":       "460800",
-        "flash_mode":      "dio",    # V3 uses DIO — some flash chips do not support QIO
+        "name":      "Heltec WiFi LoRa 32 V3",
+        "chip":      "ESP32",      # matches esptool "Chip is ESP32 ..."
+        "baud_rate": "460800",
+        "flash_mode": "dio",
+        "flash_variants": {
+            "8MB": {
+                "pio_env":      "rtnode_heltec_v3",
+                "build_dir":    ".pio/build/rtnode_heltec_v3",
+                "firmware_bin": "rtnode_heltec_v3.bin",
+                "merged_bin":   "rtnode_heltec_v3_merged.bin",
+            },
+        },
     },
 }
 DEFAULT_BOARD = "v4"
@@ -104,8 +124,52 @@ _board = None
 def board_profile():
     return BOARD_PROFILES[_board or DEFAULT_BOARD]
 
+def flash_variant():
+    """Return the flash variant dict for the active board and detected flash size.
+
+    Falls back to the smallest (safest) available variant when the exact size is
+    unknown — a smaller-flash firmware runs on any larger device, but not vice versa.
+    """
+    variants = board_profile()["flash_variants"]
+    size = _detected_flash_size or DEFAULT_FLASH_SIZE
+    if size in variants:
+        return variants[size]
+    # Fallback: smallest available variant
+    available = sorted(variants.keys(), key=lambda s: int(s.replace("MB", "")))
+    return variants[available[0]]
+
 def BUILD_DIR():
-    return board_profile()["build_dir"]
+    return flash_variant()["build_dir"]
+
+def MERGED_BIN():
+    """Return the path to the pre-merged binary in the PlatformIO build dir."""
+    merged = flash_variant().get("merged_bin")
+    if not merged:
+        return None
+    return os.path.join(BUILD_DIR(), merged)
+
+def find_local_firmware():
+    """Look for pre-built firmware binaries adjacent to flash.py.
+
+    This is the primary path when the user has extracted the release ZIP.
+    Prefers the pre-merged binary (full-flash-ready, no merge step needed)
+    over the app-only binary.
+
+    Returns the path if found, or None.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    fv = flash_variant()
+    # Prefer merged binary — works for both full flash and app-only update
+    merged = fv.get("merged_bin")
+    if merged:
+        path = os.path.join(script_dir, merged)
+        if os.path.isfile(path):
+            return path
+    # Fall back to app-only binary
+    path = os.path.join(script_dir, fv["firmware_bin"])
+    if os.path.isfile(path):
+        return path
+    return None
 
 def BOOTLOADER_BIN():
     return os.path.join(BUILD_DIR(), "bootloader.bin")
@@ -114,10 +178,11 @@ def PARTITIONS_BIN():
     return os.path.join(BUILD_DIR(), "partitions.bin")
 
 def FIRMWARE_BIN():
-    return os.path.join(BUILD_DIR(), board_profile()["firmware_bin"])
+    return os.path.join(BUILD_DIR(), flash_variant()["firmware_bin"])
 
 def FLASH_SIZE():
-    return board_profile()["flash_size"]
+    """Return the effective flash size: detected from device, or conservative default."""
+    return _detected_flash_size or DEFAULT_FLASH_SIZE
 
 def BAUD_RATE():
     return board_profile()["baud_rate"]
@@ -129,11 +194,8 @@ def BOARD_FLASH_MODE():
     """
     return _flash_mode_override or board_profile().get("flash_mode", FLASH_MODE)
 
-def MERGED_FILENAME():
-    return board_profile()["merged_filename"]
-
 def PIO_ENV():
-    return board_profile()["pio_env"]
+    return flash_variant()["pio_env"]
 
 # ESP32 partition table magic bytes (first two bytes of a partition table entry)
 PARTITION_TABLE_MAGIC = b'\xaa\x50'
@@ -197,16 +259,14 @@ def extract_app_from_merged(merged_path):
 
 
 def _find_in_platformio_or_release(build_path, release_name):
-    """Find a file in the PlatformIO build output or the bundled Release/ dir."""
-    # 1. PlatformIO build output
+    """Find a file in the PlatformIO build output.
+
+    The Release/ directory no longer ships pre-built boot component binaries.
+    All boot components come from PlatformIO build output.  Call
+    ensure_firmware_built() first to trigger a build when needed.
+    """
     if os.path.isfile(build_path):
         return build_path
-
-    # 2. Bundled in Release/
-    bundled = os.path.join(os.path.dirname(__file__), "Release", release_name)
-    if os.path.isfile(bundled):
-        return bundled
-
     return None
 
 # Forward-compatible aliases (these are now functions, not constants)
@@ -241,11 +301,6 @@ def find_boot_app0():
                 if os.path.isfile(candidate):
                     return candidate
 
-    # Bundled fallback
-    bundled = os.path.join(os.path.dirname(__file__), "Release", "boot_app0.bin")
-    if os.path.isfile(bundled):
-        return bundled
-
     return None
 
 
@@ -263,22 +318,17 @@ BOOT_APP0_BIN = find_boot_app0()
 
 # ── Board auto-detection ───────────────────────────────────────────────────────
 
-# Map detected flash sizes to board keys
-_FLASH_SIZE_TO_BOARD = {
-    "16MB": "v4",
-    "8MB":  "v3",
+# Map chip type to board keys. Chip string comes from esptool "Chip is <type>".
+# Sorted longest-first in detect_board so "ESP32-S3" wins over "ESP32".
+_CHIP_TO_BOARD = {
+    "ESP32-S3": "v4",
+    "ESP32":    "v3",
 }
 
-def detect_board(port, esptool_cmd):
-    """Auto-detect which Heltec board is connected by querying flash size.
+def read_flash_info(port, esptool_cmd):
+    """Read device flash metadata using ``esptool.py flash_id``.
 
-    Runs ``esptool.py flash_id`` and parses the output for:
-      - Detected flash size (16MB → V4, 8MB → V3)
-      - Chip type (ESP32-S3 expected)
-      - Features (PSRAM size, WiFi, BLE)
-
-    Returns a tuple (board_key, info_dict) on success, or (None, reason) on
-    failure.  ``board_key`` is "v3" or "v4".
+    Returns ``(info_dict, None)`` on success, or ``(None, reason)`` on failure.
     """
     cmd = esptool_cmd + ["--port", port, "flash_id"]
     try:
@@ -312,10 +362,40 @@ def detect_board(port, esptool_cmd):
     if not flash_size:
         return None, f"Could not parse flash size from esptool output:\n{output.strip()}"
 
-    board_key = _FLASH_SIZE_TO_BOARD.get(flash_size)
-    if not board_key:
+    return info, None
+
+
+def detect_board(port, esptool_cmd):
+    """Auto-detect which Heltec board is connected.
+
+    Uses chip type as the primary discriminator (ESP32-S3 → V4, ESP32 → V3),
+    so a V4 device with 8MB flash is correctly identified as V4, not V3.
+    Flash size is stored in the returned info dict and used to select the
+    correct firmware variant.
+
+    Returns a tuple (board_key, info_dict) on success, or (None, reason) on
+    failure.  ``board_key`` is "v3" or "v4".
+    """
+    info, err = read_flash_info(port, esptool_cmd)
+    if not info:
+        return None, err
+
+    chip_str = info.get("chip", "")
+    features = info.get("features", "")
+
+    if "ESP32-S3" in chip_str:
+        # Both V3 and V4 are ESP32-S3. Distinguish by PSRAM presence.
+        # V4 (ESP32-S3FH4R2): features includes "Embedded PSRAM"
+        # V3 (ESP32-S3FN8):   features has no PSRAM entry
+        if "PSRAM" in features.upper():
+            board_key = "v4"
+        else:
+            board_key = "v3"
+    elif "ESP32" in chip_str:
+        board_key = "v3"
+    else:
         return None, (
-            f"Unknown flash size '{flash_size}' — expected 16MB (V4) or 8MB (V3).\n"
+            f"Unknown chip '{chip_str}' — expected ESP32-S3 (V3/V4) or ESP32.\n"
             f"Use --board v3 or --board v4 to specify manually."
         )
 
@@ -325,30 +405,56 @@ def detect_board(port, esptool_cmd):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def find_esptool(prefer_system=False):
-    """Find esptool, preferring repo-managed copies for reproducible flashing.
+    """Find esptool, preferring the bundled standalone binary for reproducibility.
 
-    Default order is bundled Release/ copy, then PlatformIO's packaged copy,
-    then any host-installed esptool. Pass ``prefer_system=True`` to invert that
-    preference when a user explicitly wants their machine-wide installation.
+    Default search order:
+      1. Release/esptool/esptool  (standalone binary — no Python/pyserial needed)
+      2. PlatformIO packaged esptool.py  (dev environments)
+      3. Host-installed esptool (PATH / ~/.local/bin)
+
+    Pass ``prefer_system=True`` (--use-system-esptool) to move the host
+    installation to the front, useful when you want to use a newer system
+    esptool for debugging.
+
+    The standalone binary MUST remain first in repo_candidates.
     """
-    # Check if pyserial is available before using script-based esptool
+    # Check if pyserial is available — needed for script-based (*.py) fallbacks
     try:
         import serial  # noqa: F401
         has_pyserial = True
     except ImportError:
         has_pyserial = False
 
-    bundled = os.path.join(os.path.dirname(__file__), "Release", "esptool", "esptool.py")
+    # Platform-aware standalone binary name
+    exe_name   = "esptool.exe" if platform.system() == "Windows" else "esptool"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Two possible locations for the standalone binary:
+    #   1. <script_dir>/esptool/esptool   — flat ZIP extraction (user-facing release)
+    #   2. <script_dir>/Release/esptool/esptool — git repo / nested ZIP
+    bundled_bin = (
+        os.path.join(script_dir, "esptool", exe_name)
+        if os.path.isfile(os.path.join(script_dir, "esptool", exe_name))
+        else os.path.join(script_dir, "Release", "esptool", exe_name)
+    )
     pio_esptool = os.path.expanduser(
         "~/.platformio/packages/tool-esptoolpy/esptool.py"
     )
 
     repo_candidates = []
-    if has_pyserial:
-        if os.path.isfile(bundled):
-            repo_candidates.append(([sys.executable, bundled], f"bundled esptool: {bundled}"))
-        if os.path.isfile(pio_esptool):
-            repo_candidates.append(([sys.executable, pio_esptool], f"PlatformIO esptool: {pio_esptool}"))
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # DO NOT CHANGE THIS ORDER.
+    # The bundled Release/esptool binary is INTENTIONALLY first.
+    # It is a platform-native standalone executable — no Python or pyserial
+    # required.  Users flashing from the release archive get a consistent,
+    # pinned esptool regardless of what is installed on their machine.
+    # PlatformIO esptool.py is a fallback for dev environments only.
+    # NEVER reorder these lines. NEVER "prefer" PlatformIO over bundled.
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    if os.path.isfile(bundled_bin) and os.access(bundled_bin, os.X_OK):
+        # Standalone binary — invoke directly, no Python interpreter prefix
+        repo_candidates.append(([bundled_bin], f"bundled esptool binary: {bundled_bin}"))
+    if has_pyserial and os.path.isfile(pio_esptool):
+        repo_candidates.append(([sys.executable, pio_esptool], f"PlatformIO esptool: {pio_esptool}"))
 
     system_candidates = []
     if shutil.which("esptool.py"):
@@ -367,10 +473,10 @@ def find_esptool(prefer_system=False):
         print(f"  Found {source}")
         return command
 
-    if (os.path.isfile(bundled) or os.path.isfile(pio_esptool)) and not has_pyserial:
-        print("Found bundled esptool but pyserial is not installed.")
+    if not has_pyserial and os.path.isfile(pio_esptool):
+        print("Found PlatformIO esptool.py but pyserial is not installed.")
         print("Install it with:  pip install pyserial")
-        print("Or install the standalone esptool:  pip install esptool")
+        print("Or place the standalone esptool binary at: Release/esptool/esptool")
         sys.exit(1)
 
     return None
@@ -465,37 +571,40 @@ def _cache_dir():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), ".firmware_cache")
 
 
-def _cache_meta_path(board_key):
-    """Return path to the cache metadata JSON for a given board."""
-    return os.path.join(_cache_dir(), board_key, "meta.json")
+def _archive_cache_path():
+    """Return path to the cached firmware archive zip."""
+    return os.path.join(_cache_dir(), FIRMWARE_ARCHIVE)
 
 
-def _cached_firmware_path(board_key):
-    """Return path to the cached firmware binary for a given board."""
-    return os.path.join(_cache_dir(), board_key, BOARD_PROFILES[board_key]["merged_filename"])
+def _extracted_firmware_path(firmware_name):
+    """Return path to an extracted firmware binary in the flat cache dir."""
+    return os.path.join(_cache_dir(), firmware_name)
 
 
-def _read_cache_meta(board_key):
-    """Read cache metadata, returning dict or None if not cached."""
+def _cache_meta_path():
+    """Return path to the archive cache metadata JSON (single file for all variants)."""
+    return os.path.join(_cache_dir(), "meta.json")
+
+
+def _read_cache_meta():
+    """Read archive cache metadata, returning dict or None if not cached."""
     import json
-    meta_path = _cache_meta_path(board_key)
-    if os.path.isfile(meta_path):
+    path = _cache_meta_path()
+    if os.path.isfile(path):
         try:
-            with open(meta_path) as f:
+            with open(path) as f:
                 return json.load(f)
         except Exception:
             pass
     return None
 
 
-def _write_cache_meta(board_key, tag, sha256):
-    """Write cache metadata after a successful download."""
+def _write_cache_meta(tag, sha256):
+    """Write archive cache metadata after a successful download."""
     import json
-    cache = os.path.join(_cache_dir(), board_key)
-    os.makedirs(cache, exist_ok=True)
-    meta = {"tag": tag, "sha256": sha256}
-    with open(_cache_meta_path(board_key), "w") as f:
-        json.dump(meta, f, indent=2)
+    os.makedirs(_cache_dir(), exist_ok=True)
+    with open(_cache_meta_path(), "w") as f:
+        json.dump({"tag": tag, "sha256": sha256}, f, indent=2)
 
 
 def _parse_version_tag(tag):
@@ -532,21 +641,28 @@ def _fetch_release_info(tag=None):
         return None, str(e)
 
 
-def fetch_firmware(board_key, release_tag=None):
-    """Fetch firmware from GitHub, using cache when possible.
+def fetch_firmware(board_key, flash_size, release_tag=None):
+    """Fetch firmware from the GitHub release archive, using cache when possible.
 
-    Logic:
-      1. Query GitHub for the target release (latest or specific tag).
-      2. If the cached firmware matches that release tag, skip download.
-      3. Otherwise download the merged firmware binary and update cache.
+    Downloads ``rtnode_firmware.zip`` once and extracts the correct binary for
+    the given board/flash-size combination.  Falls back gracefully to the old
+    per-board binary if the archive is not present in the release (backward compat).
 
     Returns (firmware_path, release_tag) on success, (None, reason) on failure.
     """
+    import zipfile
     from urllib.request import urlretrieve
 
-    merged_name = BOARD_PROFILES[board_key]["merged_filename"]
-    cache_path = _cached_firmware_path(board_key)
-    cache_meta = _read_cache_meta(board_key)
+    # Resolve variant (fallback to smallest/safest if exact size missing)
+    variants = BOARD_PROFILES[board_key]["flash_variants"]
+    if flash_size not in variants:
+        flash_size = sorted(variants, key=lambda s: int(s.replace("MB", "")))[0]
+        print(f"  ⚠  No {flash_size} variant for {board_key} — using {flash_size}")
+    variant = variants[flash_size]
+    firmware_name = variant["firmware_bin"]
+    extracted_path = _extracted_firmware_path(firmware_name)
+    archive_path   = _archive_cache_path()
+    cache_meta     = _read_cache_meta()
 
     # 1. Fetch release info
     label = f"release {release_tag}" if release_tag else "latest release"
@@ -554,23 +670,21 @@ def fetch_firmware(board_key, release_tag=None):
     release, err = _fetch_release_info(release_tag)
     if not release:
         print(f"  Could not reach GitHub: {err}")
-        # Fall back to cache if available
-        if cache_meta and os.path.isfile(cache_path):
-            print(f"  Using cached firmware: {cache_meta['tag']}")
-            return cache_path, cache_meta["tag"]
+        if cache_meta and os.path.isfile(extracted_path):
+            print(f"  Using cached firmware: {cache_meta.get('tag', '?')}")
+            return extracted_path, cache_meta.get("tag", "cached")
         return None, f"No cached firmware and GitHub unreachable: {err}"
 
     remote_tag = release.get("tag_name", "unknown")
 
-    # 2. Check cache
-    if cache_meta and os.path.isfile(cache_path):
+    # 2. Check whether cached archive is still valid
+    need_download = True
+    if cache_meta and os.path.isfile(archive_path):
         cached_tag = cache_meta.get("tag")
         if cached_tag == remote_tag:
-            # Verify file integrity
-            actual_sha = sha256_file(cache_path)
-            if actual_sha == cache_meta.get("sha256"):
-                print(f"  Cached firmware is up-to-date: {remote_tag}")
-                return cache_path, remote_tag
+            if sha256_file(archive_path) == cache_meta.get("sha256"):
+                print(f"  Cached firmware archive is up-to-date: {remote_tag}")
+                need_download = False
             else:
                 print(f"  Cache integrity mismatch — re-downloading")
         else:
@@ -583,33 +697,79 @@ def fetch_firmware(board_key, release_tag=None):
             else:
                 print(f"  Version changed: {cached_tag} → {remote_tag}")
 
-    # 3. Find the asset URL
-    asset_url = None
-    for asset in release.get("assets", []):
-        if asset["name"] == merged_name:
-            asset_url = asset["browser_download_url"]
-            break
+    if need_download:
+        # 3. Locate the archive asset (with per-board fallback for old releases)
+        asset_url   = None
+        fallback_url = None
+        fallback_name = None
+        for asset in release.get("assets", []):
+            if asset["name"] == FIRMWARE_ARCHIVE:
+                asset_url = asset["browser_download_url"]
+            if asset["name"] == firmware_name:
+                fallback_url  = asset["browser_download_url"]
+                fallback_name = asset["name"]
 
-    if not asset_url:
-        available = [a["name"] for a in release.get("assets", [])]
-        return None, (
-            f"'{merged_name}' not found in release {remote_tag}.\n"
-            f"  Available assets: {available}"
-        )
+        os.makedirs(_cache_dir(), exist_ok=True)
 
-    # 4. Download
-    os.makedirs(os.path.join(_cache_dir(), board_key), exist_ok=True)
-    print(f"  Downloading {remote_tag} / {merged_name}...")
+        if asset_url:
+            print(f"  Downloading {remote_tag} / {FIRMWARE_ARCHIVE}...")
+            try:
+                urlretrieve(asset_url, archive_path)
+            except Exception as e:
+                return None, f"Download failed: {e}"
+            file_sha = sha256_file(archive_path)
+            _write_cache_meta(remote_tag, file_sha)
+            print(f"  Downloaded {os.path.getsize(archive_path):,} bytes  SHA-256: {file_sha[:16]}...")
+
+        elif fallback_url:
+            # Old-style release — download the individual binary directly
+            print(f"  Archive '{FIRMWARE_ARCHIVE}' not in release — downloading {fallback_name}")
+            try:
+                urlretrieve(fallback_url, extracted_path)
+            except Exception as e:
+                return None, f"Download failed: {e}"
+            file_sha = sha256_file(extracted_path)
+            _write_cache_meta(remote_tag, file_sha)
+            print(f"  Downloaded {os.path.getsize(extracted_path):,} bytes  SHA-256: {file_sha[:16]}...")
+            return extracted_path, remote_tag
+
+        else:
+            available = [a["name"] for a in release.get("assets", [])]
+            return None, (
+                f"Neither '{FIRMWARE_ARCHIVE}' nor '{firmware_name}' found in release {remote_tag}.\n"
+                f"  Available assets: {available}"
+            )
+
+    # 4. Extract the correct variant from the archive.
+    #    Prefer the pre-merged binary — it is self-contained (bootloader + partitions
+    #    + app in one file) so flash.py never needs PlatformIO or boot components.
+    #    Fall back to the app-only binary for backward compat with old archives.
+    if not os.path.isfile(archive_path):
+        return None, f"Archive not found: {archive_path}"
     try:
-        urlretrieve(asset_url, cache_path)
+        with zipfile.ZipFile(archive_path) as zf:
+            names = zf.namelist()
+            # Try merged binary first
+            merged_name = variant.get("merged_bin")
+            merged_path = _extracted_firmware_path(merged_name) if merged_name else None
+            if merged_name and merged_name in names:
+                with zf.open(merged_name) as src, open(merged_path, "wb") as dst:
+                    dst.write(src.read())
+                print(f"  Extracted {merged_name} (pre-merged, full-flash-ready)")
+                return merged_path, remote_tag
+            # Fall back to app-only binary
+            if firmware_name not in names:
+                return None, (
+                    f"Neither '{merged_name or '?'}' nor '{firmware_name}' found in archive.\n"
+                    f"  Archive contains: {names}"
+                )
+            with zf.open(firmware_name) as src, open(extracted_path, "wb") as dst:
+                dst.write(src.read())
+            print(f"  Extracted {firmware_name}")
     except Exception as e:
-        return None, f"Download failed: {e}"
+        return None, f"Failed to extract firmware from archive: {e}"
 
-    file_sha = sha256_file(cache_path)
-    file_size = os.path.getsize(cache_path)
-    _write_cache_meta(board_key, remote_tag, file_sha)
-    print(f"  Downloaded {file_size:,} bytes  SHA-256: {file_sha[:16]}...")
-    return cache_path, remote_tag
+    return extracted_path, remote_tag
 
 
 def _do_merge(output_path, esptool_cmd, bootloader, partitions, boot_app0, firmware):
@@ -646,12 +806,46 @@ def _do_merge(output_path, esptool_cmd, bootloader, partitions, boot_app0, firmw
     return True
 
 
+def ensure_firmware_built():
+    """Ensure PlatformIO firmware and boot components exist, building if needed.
+
+    Returns True if all build artifacts are available (existing or freshly
+    built), False if PlatformIO is not installed or the build fails.
+    """
+    firmware = FIRMWARE_BIN()
+    if os.path.isfile(firmware):
+        return True
+
+    print(f"\n  Firmware not found: {firmware}")
+    print(f"  Building with PlatformIO (env: {PIO_ENV()})...")
+
+    pio = shutil.which("pio") or shutil.which("platformio")
+    if not pio:
+        print("  Error: PlatformIO not found. Install from https://platformio.org")
+        return False
+
+    result = subprocess.run([pio, "run", "-e", PIO_ENV()],
+                            cwd=os.path.dirname(os.path.abspath(__file__)))
+    if result.returncode != 0:
+        print("  PlatformIO build failed.")
+        return False
+
+    if not os.path.isfile(firmware):
+        print(f"  Error: Build succeeded but firmware not found: {firmware}")
+        return False
+
+    print("  Build complete.")
+    return True
+
+
 def merge_firmware(output_path, esptool_cmd):
     """Merge bootloader + partitions + boot_app0 + app into a single binary.
 
-    Uses PlatformIO build output, falling back to bundled Release/ copies
-    for the boot components.
+    Uses PlatformIO build output.  Triggers a build automatically if the
+    firmware binary is not present.
     """
+    ensure_firmware_built()
+
     bootloader = find_bootloader()
     partitions = find_partitions()
     boot_app0  = BOOT_APP0_BIN
@@ -676,12 +870,14 @@ def merge_firmware(output_path, esptool_cmd):
 def auto_merge_app_binary(app_binary_path, esptool_cmd):
     """Auto-merge an app-only binary with boot components for a full flash.
 
-    Finds bootloader, partitions, and boot_app0 from PlatformIO build output
-    or the bundled Release/ directory, then merges them with the supplied
-    app binary into a temporary merged file.
+    Finds bootloader, partitions, and boot_app0 from PlatformIO build output.
+    Triggers a PlatformIO build automatically if firmware is not yet built,
+    since bootloader.bin and partitions.bin come from the same build.
 
     Returns the path to the merged binary on success, or None on failure.
     """
+    ensure_firmware_built()
+
     bootloader = find_bootloader()
     partitions = find_partitions()
     boot_app0  = BOOT_APP0_BIN
@@ -693,8 +889,7 @@ def auto_merge_app_binary(app_binary_path, esptool_cmd):
 
     if missing:
         print(f"Cannot auto-merge: missing {', '.join(missing)}")
-        print("Place them in the Release/ folder alongside flash.py, or")
-        print(f"build with PlatformIO: pio run -e {PIO_ENV()}")
+        print(f"Build with PlatformIO first: pio run -e {PIO_ENV()}")
         return None
 
     # Create merged binary next to the app binary
@@ -991,7 +1186,7 @@ def _monitor_boot(port, timeout=8):
                     ser.close()
                     return False, output
                 # Any application output means boot succeeded
-                if "[Boundary]" in output or "RNode" in output or "WiFi" in output:
+                if "[Boundary]" in output or "Node" in output or "WiFi" in output:
                     ser.close()
                     return True, output
     except Exception:
@@ -1013,7 +1208,7 @@ def _monitor_boot(port, timeout=8):
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    global _board
+    global _board, _detected_flash_size
     parser = argparse.ArgumentParser(
         description="RTNode-HeltecV4 Flash Utility — flash transport node firmware to Heltec V3/V4",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1080,8 +1275,8 @@ Examples:
     if not esptool_cmd:
         print("Error: esptool not found!")
         print("Expected one of:")
-        print("  1. Bundled Release/esptool/esptool.py with pyserial available")
-        print("  2. PlatformIO's packaged esptool")
+        print("  1. Bundled standalone binary: Release/esptool/esptool")
+        print("  2. PlatformIO's packaged esptool (with pyserial installed)")
         print("  3. A host-installed esptool (pip install esptool)")
         sys.exit(1)
 
@@ -1090,8 +1285,24 @@ Examples:
     _early_port = None
 
     if args.board:
-        # Explicit board — no detection needed
+        # Explicit board — keep the selected profile, but still probe the device
+        # when a port is available so flash size can override stale profile data.
         _board = args.board
+        _early_port = args.port or find_serial_port()
+        if _early_port:
+            print(f"Reading flash info from {_early_port}...")
+            info, err = read_flash_info(_early_port, esptool_cmd)
+            if info:
+                detected_info = info
+                actual_flash = info.get("flash_size")
+                if actual_flash:
+                    _detected_flash_size = actual_flash
+                print(f"  Chip:       {info.get('chip', '?')}")
+                print(f"  Flash:      {actual_flash or '?'}")
+                print(f"  Features:   {info.get('features', '?')}")
+                print(f"  MAC:        {info.get('mac', '?')}")
+            else:
+                print(f"  Flash probe failed: {err}")
     elif args.merge_only:
         # No device needed for merge — fall back to default
         _board = DEFAULT_BOARD
@@ -1109,8 +1320,11 @@ Examples:
             if board_key:
                 _board = board_key
                 detected_info = info
+                actual_flash = info.get("flash_size")
+                if actual_flash:
+                    _detected_flash_size = actual_flash
                 print(f"  Chip:       {info.get('chip', '?')}")
-                print(f"  Flash:      {info.get('flash_size', '?')}")
+                print(f"  Flash:      {actual_flash or '?'}")
                 print(f"  Features:   {info.get('features', '?')}")
                 print(f"  MAC:        {info.get('mac', '?')}")
                 print(f"  → Detected: {BOARD_PROFILES[board_key]['name']}")
@@ -1140,14 +1354,22 @@ Examples:
     if args.flash_mode:
         _flash_mode_override = args.flash_mode
 
+    fv       = flash_variant()
+    print(f"  Flash size: {FLASH_SIZE()}"
+          + (" (detected from device)" if _detected_flash_size else " (conservative default)"))
+    print(f"  Variant:    {fv['firmware_bin']}")
     print(f"  Flash mode: {BOARD_FLASH_MODE().upper()}"
           + (" (override)" if _flash_mode_override else " (board default)"))
 
     # Determine firmware file
     firmware_path = None
-    merged_fn = MERGED_FILENAME()
+    # Paths within the PlatformIO build output dir
+    merged_fn    = MERGED_BIN() or os.path.join(fv["build_dir"],
+                                                 fv["firmware_bin"].replace(".bin", "_merged.bin"))
     firmware_bin = FIRMWARE_BIN()
-    pio_env = PIO_ENV()
+    pio_env      = PIO_ENV()
+    # Merged binary name shown in the variant (used for cache lookup)
+    merged_bin_name = fv.get("merged_bin")
 
     if args.file:
         firmware_path = args.file
@@ -1163,8 +1385,13 @@ Examples:
         return
 
     elif args.full and not args.release and args.offline:
-        # Full flash, offline: use local PIO build or existing merged binary
-        if os.path.isfile(firmware_bin):
+        # Full flash, offline: prefer release-ZIP firmware next to flash.py,
+        # then PIO build output, then firmware cache.
+        local = find_local_firmware()
+        if local:
+            firmware_path = local
+            print(f"Using local firmware: {local}")
+        elif os.path.isfile(firmware_bin):
             if os.path.isfile(merged_fn):
                 build_time = os.path.getmtime(firmware_bin)
                 merge_time = os.path.getmtime(merged_fn)
@@ -1180,25 +1407,31 @@ Examples:
         elif os.path.isfile(merged_fn):
             firmware_path = merged_fn
         else:
-            # Try cache
-            cached = _cached_firmware_path(_board)
-            if os.path.isfile(cached):
-                firmware_path = cached
-                meta = _read_cache_meta(_board)
+            # Try firmware cache (previously downloaded)
+            cached_merged = _extracted_firmware_path(merged_bin_name) if merged_bin_name else None
+            cached_app    = _extracted_firmware_path(fv["firmware_bin"])
+            if cached_merged and os.path.isfile(cached_merged):
+                firmware_path = cached_merged
+                meta = _read_cache_meta()
+                print(f"Using cached firmware: {meta.get('tag', '?') if meta else '?'}")
+            elif os.path.isfile(cached_app):
+                firmware_path = cached_app
+                meta = _read_cache_meta()
                 print(f"Using cached firmware: {meta.get('tag', '?') if meta else '?'}")
             else:
                 print("No firmware found for full flash!")
                 print()
                 print("Options:")
-                print(f"  1. Build with PlatformIO first:  pio run -e {pio_env}")
-                print(f"  2. Run without --offline to download from GitHub")
-                print(f"  3. Specify a file:               python flash.py --board {_board} --file <path>")
+                print(f"  1. Use firmware from the release ZIP (extract next to flash.py)")
+                print(f"  2. Build with PlatformIO:  pio run -e {pio_env}")
+                print(f"  3. Run without --offline to download from GitHub")
+                print(f"  4. Specify a file:  python flash.py --board {_board} --file <path>")
                 sys.exit(1)
 
     else:
         # Default path: fetch from GitHub (unless --offline)
         if not args.offline:
-            fw_path, tag_or_err = fetch_firmware(_board, release_tag=args.release)
+            fw_path, tag_or_err = fetch_firmware(_board, FLASH_SIZE(), release_tag=args.release)
             if fw_path:
                 firmware_path = fw_path
                 print(f"\n  Release: {tag_or_err}")
@@ -1206,16 +1439,25 @@ Examples:
                 print(f"\n  GitHub: {tag_or_err}")
                 print("  Falling back to local firmware...")
 
-        # Fall back to local PIO build output or cache
+        # Fall back to local firmware alongside flash.py, PIO build, or cache
         if not firmware_path:
-            if os.path.isfile(firmware_bin):
+            local = find_local_firmware()
+            if local:
+                firmware_path = local
+                print(f"Using local firmware: {local}")
+            elif os.path.isfile(firmware_bin):
                 firmware_path = firmware_bin
                 print(f"Using local PlatformIO build: {firmware_bin}")
             else:
-                cached = _cached_firmware_path(_board)
-                if os.path.isfile(cached):
-                    firmware_path = cached
-                    meta = _read_cache_meta(_board)
+                cached_merged = _extracted_firmware_path(merged_bin_name) if merged_bin_name else None
+                cached_app    = _extracted_firmware_path(fv["firmware_bin"])
+                if cached_merged and os.path.isfile(cached_merged):
+                    firmware_path = cached_merged
+                    meta = _read_cache_meta()
+                    print(f"Using cached firmware: {meta.get('tag', '?') if meta else '?'}")
+                elif os.path.isfile(cached_app):
+                    firmware_path = cached_app
+                    meta = _read_cache_meta()
                     print(f"Using cached firmware: {meta.get('tag', '?') if meta else '?'}")
                 elif os.path.isfile(merged_fn):
                     firmware_path = merged_fn
@@ -1224,8 +1466,9 @@ Examples:
                     print("No firmware found!")
                     print()
                     print("Options:")
-                    print(f"  1. Build with PlatformIO first:  pio run -e {pio_env}")
-                    print(f"  2. Specify a file:               python flash.py --board {_board} --file <path>")
+                    print(f"  1. Use firmware from the release ZIP (extract next to flash.py)")
+                    print(f"  2. Build with PlatformIO:  pio run -e {pio_env}")
+                    print(f"  3. Specify a file:  python flash.py --board {_board} --file <path>")
                     sys.exit(1)
 
     # ── Device checks & flash decision ──────────────────────────────────────

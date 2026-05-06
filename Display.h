@@ -60,6 +60,15 @@ struct BoundaryState {
     bool     ifac_enabled;
     char     ifac_netname[33];
     char     ifac_passphrase[33];
+    // Device advertisement settings
+    bool     advert_enabled;
+    double   advert_lat;
+    double   advert_lon;
+    bool     advert_jitter;
+    char     node_name[33];   // Human-readable name (empty = auto from node hash)
+    // Airtime / duty-cycle limits as fraction (0.0 = disabled, 0.01 = 1%).
+    float    st_airtime_limit; // ~15 second rolling window
+    float    lt_airtime_limit; // ~1 hour rolling window
     bool     wifi_connected;
     bool     tcp_connected;       // Backbone (WAN) connected
     bool     ap_tcp_connected;    // Local TCP server (LAN) has client
@@ -947,7 +956,11 @@ void draw_disp_area() {
       disp_area.setTextColor(SSD1306_BLACK);
       disp_area.setTextSize(1);
       disp_area.setCursor(4, 7);
-      disp_area.print("RTNode");
+      if (boundary_state.node_name[0] != '\0') {
+        disp_area.print(boundary_state.node_name);
+      } else {
+        disp_area.print("RTNode");
+      }
 
       disp_area.setTextColor(SSD1306_WHITE);
 

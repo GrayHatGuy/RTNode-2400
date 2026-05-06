@@ -88,7 +88,26 @@
 #define ADDR_CONF_APP_MARKER0 0x119 // RTNode app marker byte 0
 #define ADDR_CONF_APP_MARKER1 0x11A // RTNode app marker byte 1
 #define ADDR_CONF_APP_VERSION 0x11B // RTNode app config version
-// Total: 0x11C (284 bytes — extends beyond 256-byte CONFIG area into
+// Device advertisement settings (advertise this node's parameters and
+// optional GPS coordinates to the Reticulum network so external maps such
+// as rmap.world can pin it). Stored after the app version markers so the
+// existing layout is preserved and old saves keep working (uninitialised
+// 0xFF bytes are interpreted as "advertisement disabled, no coordinates").
+#define ADDR_CONF_ADVERT_EN     0x11C // Advertise enable flag (1 byte, 0x73 = enabled)
+#define ADDR_CONF_ADVERT_LAT    0x11D // Latitude as IEEE-754 double (8 bytes, host byte order)
+#define ADDR_CONF_ADVERT_LON    0x125 // Longitude as IEEE-754 double (8 bytes, host byte order)
+#define ADDR_CONF_ADVERT_JITTER 0x12D // Randomize ~0.5 km offset flag (1 byte, 0x73 = enabled)
+#define ADDR_CONF_NODE_NAME     0x12E // Node display name (33 bytes, null-terminated)
+// Airtime (duty-cycle) limits. Stored as 1 byte each, in units of 0.1%
+// (so byte value 10 = 1.0%, byte value 100 = 10.0%; max 25.0% per byte).
+// 0xFF (uninitialised) or 0 = disabled. When the measured short-term
+// airtime exceeds st_alock, or the long-term airtime exceeds lt_alock,
+// LoRa TX is paused (airtime_lock) until the rolling window drops below
+// the threshold again. Useful for self-imposed regional duty-cycle
+// budgets (e.g. EU868 = 1.0% long-term).
+#define ADDR_CONF_ST_AL         0x14F // Short-term airtime limit (1 byte, percent * 10)
+#define ADDR_CONF_LT_AL         0x150 // Long-term  airtime limit (1 byte, percent * 10)
+// Total: 0x151 (337 bytes — extends beyond 256-byte CONFIG area into
 //         unused EEPROM gap; safe on ESP32 where EEPROM starts at 824)
 
 #define BOUNDARY_ENABLE_BYTE 0x73
@@ -117,6 +136,20 @@ struct BoundaryState {
     bool     ifac_enabled;    // Whether IFAC is configured
     char     ifac_netname[33]; // Network name (empty = not set)
     char     ifac_passphrase[33]; // Passphrase (empty = not set)
+
+    // Device advertisement settings (used to advertise this node's
+    // parameters and optional GPS location so external maps such as
+    // rmap.world can pin this node). Defaults to disabled.
+    bool     advert_enabled;  // Whether to advertise this device
+    double   advert_lat;      // Latitude in decimal degrees (-90..90)
+    double   advert_lon;      // Longitude in decimal degrees (-180..180)
+    bool     advert_jitter;   // Randomize ~0.5 km offset for advertised coords
+    char     node_name[33];   // Human-readable name (empty = auto from node hash)
+
+    // Airtime / duty-cycle limits, in fraction (0.0 = disabled, 0.01 = 1%).
+    // Mirrored into the global st_airtime_limit / lt_airtime_limit at boot.
+    float    st_airtime_limit; // ~15 second rolling window
+    float    lt_airtime_limit; // ~1 hour rolling window
 
     // Runtime state
     bool     wifi_connected;
@@ -152,6 +185,32 @@ inline void boundary_clear_app_marker() {
     EEPROM.commit();
 }
 
+// ─── Helpers for serialising IEEE-754 doubles to EEPROM ──────────────────────
+// Stored as 8 raw bytes in EEPROM order. If all 8 bytes read back as 0xFF
+// (uninitialised), the value is treated as "not set" and a default is used.
+inline void boundary_write_double(int addr, double value) {
+    uint8_t buf[8];
+    memcpy(buf, &value, sizeof(buf));
+    for (int i = 0; i < 8; i++) {
+        EEPROM.write(config_addr(addr + i), buf[i]);
+    }
+}
+
+inline bool boundary_read_double(int addr, double& out) {
+    uint8_t buf[8];
+    bool all_ff = true;
+    for (int i = 0; i < 8; i++) {
+        buf[i] = EEPROM.read(config_addr(addr + i));
+        if (buf[i] != 0xFF) all_ff = false;
+    }
+    if (all_ff) return false;
+    memcpy(&out, buf, sizeof(out));
+    // Reject NaN / inf values that may slip in from corrupted EEPROM. Range
+    // clamping for valid-but-out-of-range coordinates happens at the call site.
+    if (isnan(out) || isinf(out)) return false;
+    return true;
+}
+
 inline void boundary_load_config() {
     // Check if boundary mode is configured
     uint8_t bmode = EEPROM.read(config_addr(ADDR_CONF_BMODE));
@@ -173,6 +232,15 @@ inline void boundary_load_config() {
         boundary_state.ifac_enabled = false;
         boundary_state.ifac_netname[0] = '\0';
         boundary_state.ifac_passphrase[0] = '\0';
+        boundary_state.advert_enabled = false;
+        boundary_state.advert_lat = 0.0;
+        boundary_state.advert_lon = 0.0;
+        boundary_state.advert_jitter = false;
+        boundary_state.node_name[0] = '\0';
+        boundary_state.st_airtime_limit = 0.0f;
+        boundary_state.lt_airtime_limit = 0.0f;
+        st_airtime_limit = 0.0f;
+        lt_airtime_limit = 0.0f;
         // Mark as enabled since we're compiled with BOUNDARY_MODE
         boundary_state.enabled = true;
         return;
@@ -247,6 +315,53 @@ inline void boundary_load_config() {
     }
     boundary_state.ifac_passphrase[32] = '\0';
 
+    // Load device advertisement settings. Defaults to disabled for both
+    // the master toggle and the location jitter, so previously saved
+    // configurations (which have 0xFF in these slots) keep advertising
+    // off until the user explicitly enables it from the portal.
+    {
+        uint8_t advert_en_byte = EEPROM.read(config_addr(ADDR_CONF_ADVERT_EN));
+        boundary_state.advert_enabled = (advert_en_byte == BOUNDARY_ENABLE_BYTE);
+
+        if (!boundary_read_double(ADDR_CONF_ADVERT_LAT, boundary_state.advert_lat)) {
+            boundary_state.advert_lat = 0.0;
+        }
+        if (!boundary_read_double(ADDR_CONF_ADVERT_LON, boundary_state.advert_lon)) {
+            boundary_state.advert_lon = 0.0;
+        }
+
+        // Clamp to valid ranges in case of corrupted EEPROM data.
+        if (boundary_state.advert_lat < -90.0 || boundary_state.advert_lat > 90.0) {
+            boundary_state.advert_lat = 0.0;
+        }
+        if (boundary_state.advert_lon < -180.0 || boundary_state.advert_lon > 180.0) {
+            boundary_state.advert_lon = 0.0;
+        }
+
+        uint8_t advert_jitter_byte = EEPROM.read(config_addr(ADDR_CONF_ADVERT_JITTER));
+        boundary_state.advert_jitter = (advert_jitter_byte == BOUNDARY_ENABLE_BYTE);
+
+        for (int i = 0; i < 32; i++) {
+            boundary_state.node_name[i] = EEPROM.read(config_addr(ADDR_CONF_NODE_NAME + i));
+            if (boundary_state.node_name[i] == (char)0xFF) boundary_state.node_name[i] = '\0';
+        }
+        boundary_state.node_name[32] = '\0';
+    }
+
+    // Airtime limits (1 byte each, percent * 10; 0xFF = unset = disabled).
+    {
+        uint8_t st_byte = EEPROM.read(config_addr(ADDR_CONF_ST_AL));
+        uint8_t lt_byte = EEPROM.read(config_addr(ADDR_CONF_LT_AL));
+        if (st_byte == 0xFF) st_byte = 0;
+        if (lt_byte == 0xFF) lt_byte = 0;
+        // Convert to fraction (percent/100) with 0.1% resolution.
+        boundary_state.st_airtime_limit = (float)st_byte / 1000.0f;
+        boundary_state.lt_airtime_limit = (float)lt_byte / 1000.0f;
+        // Apply to globals consumed by the airtime_lock check.
+        st_airtime_limit = boundary_state.st_airtime_limit;
+        lt_airtime_limit = boundary_state.lt_airtime_limit;
+    }
+
     // Reset runtime state
     boundary_state.packets_bridged_lora_to_tcp = 0;
     boundary_state.packets_bridged_tcp_to_lora = 0;
@@ -295,6 +410,33 @@ inline void boundary_save_config() {
         EEPROM.write(config_addr(ADDR_CONF_IFAC_PASS + i), boundary_state.ifac_passphrase[i]);
     }
     EEPROM.write(config_addr(ADDR_CONF_IFAC_PASS + 32), 0x00);
+
+    // Device advertisement settings
+    EEPROM.write(config_addr(ADDR_CONF_ADVERT_EN),
+                 boundary_state.advert_enabled ? BOUNDARY_ENABLE_BYTE : 0x00);
+    boundary_write_double(ADDR_CONF_ADVERT_LAT, boundary_state.advert_lat);
+    boundary_write_double(ADDR_CONF_ADVERT_LON, boundary_state.advert_lon);
+    EEPROM.write(config_addr(ADDR_CONF_ADVERT_JITTER),
+                 boundary_state.advert_jitter ? BOUNDARY_ENABLE_BYTE : 0x00);
+    for (int i = 0; i < 32; i++) {
+        EEPROM.write(config_addr(ADDR_CONF_NODE_NAME + i), boundary_state.node_name[i]);
+    }
+    EEPROM.write(config_addr(ADDR_CONF_NODE_NAME + 32), 0x00);
+
+    // Airtime limits — clamp to 0.0–25.5% then encode as percent * 10.
+    {
+        float st_pct = boundary_state.st_airtime_limit * 100.0f;
+        float lt_pct = boundary_state.lt_airtime_limit * 100.0f;
+        if (st_pct < 0.0f) st_pct = 0.0f;
+        if (lt_pct < 0.0f) lt_pct = 0.0f;
+        if (st_pct > 25.5f) st_pct = 25.5f;
+        if (lt_pct > 25.5f) lt_pct = 25.5f;
+        uint8_t st_byte = (uint8_t)(st_pct * 10.0f + 0.5f);
+        uint8_t lt_byte = (uint8_t)(lt_pct * 10.0f + 0.5f);
+        EEPROM.write(config_addr(ADDR_CONF_ST_AL), st_byte);
+        EEPROM.write(config_addr(ADDR_CONF_LT_AL), lt_byte);
+    }
+
     EEPROM.write(config_addr(ADDR_CONF_APP_MARKER0), BOUNDARY_APP_MARKER0);
     EEPROM.write(config_addr(ADDR_CONF_APP_MARKER1), BOUNDARY_APP_MARKER1);
     EEPROM.write(config_addr(ADDR_CONF_APP_VERSION), BOUNDARY_APP_VERSION);

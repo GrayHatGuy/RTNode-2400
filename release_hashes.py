@@ -36,15 +36,25 @@ for line in config_data:
 target_version = major_version+"."+minor_version
 
 release_hashes = {}
-target_dir = "./Release"
-files = os.listdir(target_dir)
-for filename in files:
-    if os.path.isfile(os.path.join(target_dir, filename)):
-        if filename.startswith("rnode_firmware"):
-            file = open(os.path.join(target_dir, filename), "rb")
-            release_hashes[filename] = {
-                "hash": hashlib.sha256(file.read()).hexdigest(),
-                "version": target_version
-            }
+
+# Scan PlatformIO build output directories for merged firmware binaries.
+# The release archive (rtnode_firmware.zip) is built from these merged files.
+pio_build_dir = ".pio/build"
+if os.path.isdir(pio_build_dir):
+    for env_name in sorted(os.listdir(pio_build_dir)):
+        env_dir = os.path.join(pio_build_dir, env_name)
+        if not os.path.isdir(env_dir):
+            continue
+        for filename in sorted(os.listdir(env_dir)):
+            if filename.startswith("rnode_firmware") and filename.endswith(".bin"):
+                filepath = os.path.join(env_dir, filename)
+                if not os.path.isfile(filepath):
+                    continue
+                with open(filepath, "rb") as file:
+                    release_hashes[filename] = {
+                        "hash": hashlib.sha256(file.read()).hexdigest(),
+                        "version": target_version,
+                        "env": env_name,
+                    }
 
 print(json.dumps(release_hashes))

@@ -100,6 +100,18 @@ extern SPIClass SPI;
 
 #define MAX_PKT_LENGTH 255
 
+// Runtime FEM / LNA selection. On boards that ship multiple FEM revisions
+// (e.g. Heltec V4.2 GC1109 vs V4.3 KCT8103L), `lora_pa_model` is initialised
+// to LORA_PA_UNKNOWN and resolved at first init by sampling the CSD pin's
+// default pull level. Single-FEM boards just hard-code LORA_PA_MODEL.
+// Mirrors upstream RNode_Firmware 1.86.
+#if HAS_LORA_PA
+  uint8_t lora_pa_model = LORA_PA_MODEL;
+#endif
+#if HAS_LORA_LNA
+  int lora_lna_gain = LORA_LNA_GAIN;
+#endif
+
 sx126x::sx126x() :
   _spiSettings(16E6, MSBFIRST, SPI_MODE0),
   _ss(LORA_DEFAULT_SS_PIN), _reset(LORA_DEFAULT_RESET_PIN), _dio0(LORA_DEFAULT_DIO0_PIN), _busy(LORA_DEFAULT_BUSY_PIN), _rxen(LORA_DEFAULT_RXEN_PIN),
@@ -271,9 +283,18 @@ void sx126x::setPacketParams(long preamble_symbols, uint8_t headermode, uint8_t 
   buf[4] = crc;
   buf[5] = 0x00; // standard IQ setting (no inversion)
   buf[6] = 0x00; // unused params
-  buf[7] = 0x00; 
-  buf[8] = 0x00; 
+  buf[7] = 0x00;
+  buf[8] = 0x00;
   executeOpcode(OP_PACKET_PARAMS_6X, buf, 9);
+
+  // SX1262 errata section 15.4 (mirrored from upstream RNode_Firmware 1.86):
+  // SetPacketParams resets register 0x0736 to an incorrect default for IQ
+  // polarity. For standard IQ (no inversion), bit 2 must be SET after every
+  // SetPacketParams call. For inverted IQ, bit 2 must be CLEARED. Without
+  // this fix, LoRa RX demodulation fails silently while TX continues to work.
+  uint8_t iqreg = readRegister(0x0736);
+  if (buf[5] == 0x00) { writeRegister(0x0736, iqreg | 0x04); }   // standard IQ
+  else                { writeRegister(0x0736, iqreg & ~0x04); }  // inverted IQ
 }
 
 void sx126x::reset(void) {
@@ -344,32 +365,56 @@ int sx126x::begin(long frequency) {
   setPacketParams(_preambleLength, _implicitHeaderMode, _payloadLength, _crcMode);
 
   #if HAS_LORA_PA
-    #if LORA_PA_GC1109
-      // Enable Vfem_ctl for supply to
-      // PA power net.
+    // Auto-detect FEM model on boards that ship multiple revisions.
+    // Mirrors upstream RNode_Firmware 1.86 detection sequence:
+    //   1. drive PWR_EN HIGH to power up the FEM
+    //   2. wait 5 ms for the FEM to settle
+    //   3. read CSD: GC1109 has internal pull-down (LOW),
+    //                KCT8103L has internal pull-up   (HIGH)
+    if (lora_pa_model == LORA_PA_UNKNOWN) {
+      #if BOARD_MODEL == BOARD_HELTEC32_V4
+        pinMode(LORA_PA_PWR_EN, OUTPUT);
+        pinMode(LORA_PA_CSD, INPUT);
+        digitalWrite(LORA_PA_PWR_EN, HIGH); delay(5);
+        if (digitalRead(LORA_PA_CSD) == HIGH) {
+          lora_pa_model = LORA_PA_KCT8103L;
+          lora_lna_gain = LORA_LNA_KCT8103L_GAIN;
+        } else {
+          lora_pa_model = LORA_PA_GC1109;
+        }
+      #endif
+    }
+
+    if (lora_pa_model == LORA_PA_GC1109) {
+      // V4.2 GC1109 path. Vfem_ctl already up from detection above for
+      // V4 boards; (re)assert here for clarity / single-FEM boards.
       pinMode(LORA_PA_PWR_EN, OUTPUT);
       digitalWrite(LORA_PA_PWR_EN, HIGH);
 
-      // Enable PA LNA and TX standby
+      // Enable PA / LNA via CSD.
       pinMode(LORA_PA_CSD, OUTPUT);
       digitalWrite(LORA_PA_CSD, HIGH);
 
-      // Keep PA CPS low until actual
-      // transmit. Does it save power?
-      // Who knows? Will have to measure.
-      // Note from the future: Nope.
-      // Power consumption is the same,
-      // and turning it on and off is
-      // not something that it likes.
-      // Keeping it high for now.
+      // CPS controls PA mode. Keep it HIGH permanently as long as the
+      // radio is powered — toggling per-packet caused the LNA to misbehave.
       pinMode(LORA_PA_CPS, OUTPUT);
       digitalWrite(LORA_PA_CPS, HIGH);
 
-      // On Heltec V4, the PA CTX pin
-      // is driven by the SX1262 DIO2
-      // pin directly, so we do not
-      // need to manually raise this.
-    #endif
+      // CTX is driven directly by SX1262 DIO2.
+    } else if (lora_pa_model == LORA_PA_KCT8103L) {
+      // V4.3 KCT8103L path.
+      pinMode(LORA_PA_PWR_EN, OUTPUT);
+      digitalWrite(LORA_PA_PWR_EN, HIGH);
+
+      // Enable KCT8103L chip via CSD.
+      pinMode(LORA_PA_CSD, OUTPUT);
+      digitalWrite(LORA_PA_CSD, HIGH);
+
+      // CTX selects RX-LNA (LOW) vs TX (HIGH). Start in RX.
+      // CPS is driven directly by SX1262 DIO2.
+      pinMode(LORA_PA_CTX, OUTPUT);
+      digitalWrite(LORA_PA_CTX, LOW);
+    }
   #endif
 
   return 1;
@@ -379,13 +424,11 @@ void sx126x::end() { sleep(); SPI.end(); _preinit_done = false; }
 
 int sx126x::beginPacket(int implicitHeader) {
   #if HAS_LORA_PA
-    #if LORA_PA_GC1109
-      // Enable PA CPS for transmit
-      // digitalWrite(LORA_PA_CPS, HIGH);
-      // Disabled since we're keeping it
-      // on permanently as long as the
-      // radio is powered up.
-    #endif
+    if (lora_pa_model == LORA_PA_KCT8103L) {
+      // V4.3 KCT8103L: drive CTX HIGH to select TX path / full PA.
+      digitalWrite(LORA_PA_CTX, HIGH);
+    }
+    // V4.2 GC1109: PA CPS is kept HIGH permanently, no toggle needed.
   #endif
 
   standby();
@@ -426,6 +469,17 @@ int sx126x::endPacket() {
   mask[0] = 0x00;
   mask[1] = IRQ_TX_DONE_MASK_6X;
   executeOpcode(OP_CLEAR_IRQ_STATUS_6X, mask, 2);
+
+  #if HAS_LORA_PA
+    if (lora_pa_model == LORA_PA_KCT8103L) {
+      // V4.3 KCT8103L: drop CTX back LOW so the FEM returns to RX-LNA mode
+      // immediately after TX. Without this CTX would stay HIGH while CPS
+      // (driven by DIO2) goes LOW, leaving the FEM in TX-bypass and
+      // blocking RX of any reply packets.
+      digitalWrite(LORA_PA_CTX, LOW);
+    }
+  #endif
+
   if (timed_out) { return 0; } else { return 1; }
 }
 
@@ -473,7 +527,7 @@ int ISR_VECT sx126x::currentRssi() {
   executeOpcodeRead(OP_CURRENT_RSSI_6X, &byte, 1);
   int rssi = -(int(byte)) / 2;
   #if HAS_LORA_LNA
-    rssi -= LORA_LNA_GAIN;
+    rssi -= lora_lna_gain;
   #endif
   return rssi;
 }
@@ -489,7 +543,7 @@ int ISR_VECT sx126x::packetRssi() {
   executeOpcodeRead(OP_PACKET_STATUS_6X, buf, 3);
   int pkt_rssi = -buf[0] / 2;
   #if HAS_LORA_LNA
-    pkt_rssi -= LORA_LNA_GAIN;
+    pkt_rssi -= lora_lna_gain;
   #endif
   return pkt_rssi;
 }
@@ -596,15 +650,12 @@ void sx126x::onReceive(void(*callback)(int)){
 
 void sx126x::receive(int size) {
   #if HAS_LORA_PA
-    #if LORA_PA_GC1109
-      // Disable PA CPS for receive
-      // digitalWrite(LORA_PA_CPS, LOW);
-      // That turned out to be a bad idea.
-      // The LNA goes wonky if it's toggled
-      // on and off too quickly. We'll keep
-      // it on permanently, as long as the
-      // radio is powered up.
-    #endif
+    if (lora_pa_model == LORA_PA_KCT8103L) {
+      // V4.3 KCT8103L: CTX LOW selects RX-LNA path.
+      digitalWrite(LORA_PA_CTX, LOW);
+    }
+    // V4.2 GC1109: PA CPS is left HIGH permanently. Toggling it caused
+    // the LNA to go wonky, so we keep it on while the radio is powered.
   #endif
 
   if (size > 0) {
@@ -730,7 +781,15 @@ void sx126x::handleLowDataRate() {
 }
 
 // TODO: Check if there's anything the sx1262 can do here
-void sx126x::optimizeModemSensitivity(){ }
+// SX1262 errata section 15.1 (mirrored from upstream RNode_Firmware 1.86):
+// Modulation quality with 500 kHz LoRa BW. Register 0x0889 bit 2 must be
+// CLEARED for 500 kHz, SET for all other bandwidths. Improves receiver
+// sensitivity at non-500 kHz bandwidths.
+void sx126x::optimizeModemSensitivity(){
+  uint8_t reg = readRegister(0x0889);
+  if (getSignalBandwidth() == 500E3) { writeRegister(0x0889, reg & 0xFB); } // clear bit 2
+  else                               { writeRegister(0x0889, reg | 0x04); } // set bit 2
+}
 
 void sx126x::setSignalBandwidth(long sbw) {
   if (sbw <= 7.8E3)        { _bw = 0x00; }

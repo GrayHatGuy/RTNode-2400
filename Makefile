@@ -282,6 +282,25 @@ release: release-all
 
 release-all: console-site spiffs-image release-tbeam release-tbeam_sx1262 release-lora32_v10 release-lora32_v20 release-lora32_v21 release-lora32_v10_extled release-lora32_v20_extled release-lora32_v21_extled release-lora32_v21_tcxo release-featheresp32 release-genericesp32 release-heltec32_v2 release-heltec32_v3 release-heltec32_v4 release-heltec32_v2_extled release-heltec_t114 release-techo release-rnode_ng_20 release-rnode_ng_21 release-t3s3 release-t3s3_sx127x release-t3s3_sx1280_pa release-tdeck release-tbeam_supreme release-rak4631 release-xiao_s3 release-hashes
 
+# Build all PlatformIO environments and package them into a single release archive.
+# The archive (rtnode_firmware.zip) is the primary distribution artefact consumed
+# by flash.py.  Individual binaries are stored flat inside the zip.
+release-pio:
+	pio run -e rtnode_heltec_v4 -e rtnode_heltec_v3
+	python3 -c "\
+import zipfile, os, sys; \
+variants = [ \
+    ('.pio/build/rtnode_heltec_v4', 'rtnode_heltec_v4.bin'), \
+    ('.pio/build/rtnode_heltec_v3', 'rtnode_heltec_v3.bin'), \
+]; \
+missing = [(d,n) for d,n in variants if not os.path.isfile(os.path.join(d,n))]; \
+[sys.exit(f'Missing: {os.path.join(d,n)}') for d,n in missing]; \
+zf = zipfile.ZipFile('rtnode_firmware.zip','w',zipfile.ZIP_DEFLATED); \
+[zf.write(os.path.join(d,n), n) for d,n in variants]; \
+zf.close(); \
+print('Created rtnode_firmware.zip with', len(variants), 'variants'); \
+"
+
 release-hashes:
 	python ./release_hashes.py > ./Release/release.json
 

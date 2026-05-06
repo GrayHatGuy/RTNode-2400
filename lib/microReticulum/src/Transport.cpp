@@ -3690,6 +3690,12 @@ will announce it.
 		DestinationEntry& destination_entry = (*destination_iter).second;
 		const Packet& announce_packet = destination_entry.announce_packet();
 		const Bytes& next_hop = destination_entry._received_from;
+		if (!announce_packet) {
+			// Cache file missing or corrupt — remove the stale entry and bail
+			WARNING("path_request: removing stale path to " + destination_hash.toHex() + " due to missing announce packet cache");
+			_destination_table.erase(destination_iter);
+			return;
+		}
 		const Interface& receiving_interface = destination_entry.receiving_interface();
 
 		if (attached_interface.mode() == Type::Interface::MODE_ROAMING && attached_interface == receiving_interface) {

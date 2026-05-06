@@ -57,9 +57,32 @@ This firmware was designed for the **Heltec WiFi LoRa 32 V4** and expanded to ac
 | **WiFi**     | 2.4 GHz 802.11 b/g/n | 2.4 GHz 802.11 b/g/n | 2.4 GHz b/g/n Wi-Fi & Bluetooth 5.0 | 2.4GHz b/g/n Wi-Fi and Bluetooth 5.0/Bluetooth Mesh|
 | **USB**      | Native USB CDC | Native USB CDC |  Native USB CDC | Native USB CDC|
 
+<<<<<<< HEAD
+=======
+| Component | Heltec V3 | Heltec V4 |
+|-----------|-----------|----------|
+| **MCU** | ESP32-S3 (ESP32-S3FN8) | ESP32-S3 (ESP32-S3FH4R2) |
+| **Flash** | 8 MB | 16 MB |
+| **PSRAM** | None | 2 MB (QSPI) |
+| **Radio** | SX1262 | SX1262 + PA (see below) |
+| **TX Power** | Up to 22 dBm | Up to 28 dBm |
+| **Display** | SSD1306 OLED 128×64 | SSD1306 OLED 128×64 |
+| **WiFi** | 2.4 GHz 802.11 b/g/n | 2.4 GHz 802.11 b/g/n |
+| **USB** | Native USB CDC | Native USB CDC |
+>>>>>>> upstream/main
+
+The Heltec V4 has two board revisions that use different front-end modules. The firmware auto-detects the FEM type at boot:
+
+| Revision | PA | TX control | RX control |
+|----------|----|-----------|------------|
+| V4.2 | GC1109 | CSD + CPS (CTX driven by DIO2) | CSD low |
+| V4.3 | KCT8103L | CSD + CTX (CPS driven by DIO2) | CSD + CTX low |
+
+A single `rtnode_heltec_v4` binary runs correctly on both revisions.
 
 ## Quick Start
 
+<<<<<<< HEAD
 The following devices offer RTNode enhanced memory allocation and active portal OTA configuration features in addition to ports of the base [microReticulum](https://github.com/attermann/microReticulum) firmware.
 
 - lilygo-t3-s3-sx1280-pa-boundry
@@ -132,8 +155,21 @@ The table below is provides details on the RTNode devices with boundary enhancem
 | RNS_USE_ALLOCATOR	| no | yes | no |
 
 ### Option A: Easy Flash (no PlatformIO required)
+=======
+### Option A: Web Flasher (easiest — no tools required)
+>>>>>>> upstream/main
 
-The easiest way to flash a pre-built firmware. You only need Python 3 and a USB cable.
+Open **[jrl290.github.io/RTNode-HeltecV4](https://jrl290.github.io/RTNode-HeltecV4/)** in Chrome or Edge, connect your RTNode via USB, and follow the two-step flow:
+
+1. **Detect** — click *Detect* and select your device from the browser's serial port picker. The flasher identifies the board (V3 or V4) automatically using PSRAM detection.
+2. **Flash** — choose *Update firmware* (app only, settings preserved) or *Full install* (erases everything — use for first-time installs), then click *Flash Firmware*.
+
+> Web Serial requires **Chrome 89+** or **Microsoft Edge**. Firefox and Safari are not supported.  
+> On Linux, add your user to the `dialout` group first: `sudo usermod -a -G dialout $USER` (then log out and back in).
+
+### Option B: flash.py (Python CLI)
+
+The easiest way to flash from the command line. You only need Python 3 and a USB cable.
 
 ```bash
 # Clone this repo (or download just flash.py + the firmware binary)
@@ -159,8 +195,13 @@ By default, `flash.py` uses the bundled `Release/esptool/esptool.py` for reprodu
 
 The flash utility auto-detects whether a V3 or V4 is connected by querying the flash size (8MB = V3, 16MB = V4). You can override with `--board v3` or `--board v4`. It will list all available serial ports and prompt you to choose one. If no ports are detected, you may need to hold the **BOOT** button while pressing **RESET** to enter download mode.
 
+<<<<<<< HEAD
 ### Option B: Build from Source (PlatformIO)
 *Note: At present only Boundry mode and environments in [Quick Start](https://github.com/GrayHatGuy/RTNode-HeltecV4/blob/main/README.md#quick-start) are supported.
+=======
+### Option C: Build from Source (PlatformIO)
+
+>>>>>>> upstream/main
 For development or customization:
 
 ```bash
@@ -170,10 +211,10 @@ git clone https://github.com/jrl290/RTNode-HeltecV4.git
 cd RTNode-HeltecV4
 
 # Build for V4
-pio run -e heltec_V4_boundary
+pio run -e rtnode_heltec_v4
 
 # Build for V3
-pio run -e heltec_V3_boundary
+pio run -e rtnode_heltec_v3
 
 # Build for Seeed Xiao esp32S3 with WIO SX1622 (Boundry Mode Only)
 pio run -e seeed_xiao_esp32s3_boundary
@@ -182,18 +223,22 @@ pio run -e seeed_xiao_esp32s3_boundary
 pio run -e lilygo-t3-s3-sx1280-pa-boundary
 
 # Flash (via PlatformIO)
+<<<<<<< HEAD
 # update environment to reflect device type
 pio run -e heltec_V4_boundary -t upload
+=======
+pio run -e rtnode_heltec_v4 -t upload
+>>>>>>> upstream/main
 
 # Or create a merged binary and flash with the utility
 python flash.py --merge-only    # creates merged firmware bin
 python flash.py                 # flash it (auto-detects board)
 
 # Monitor serial output (optional)
-pio device monitor -e heltec_V4_boundary
+pio device monitor -e rtnode_heltec_v4
 ```
 
-### Option C: Manual esptool Flash
+### Option D: Manual esptool Flash
 
 If you have the merged binary (`rtnode_heltec_v4.bin`), you can flash it with a single esptool command:
 
@@ -250,6 +295,27 @@ The web form has four sections:
 | **Coding Rate** | 4/5 – 4/8 |
 | **TX Power** | 2 – 28 dBm |
 
+#### 📍 Device Advertisement
+Optional: announce this node and its parameters on the Reticulum network so external maps such as [rmap.world](https://rmap.world) can automatically place a pin for it. **Disabled by default** — only enable if you want this node to be publicly listed.
+
+When enabled, the firmware periodically (~every 6 hours, matching the Reticulum default) emits an interface-discovery announce as described in the [Reticulum manual](https://reticulum.network/manual/interfaces.html). The announce is sent on the destination `rnstransport.discovery.interface` and contains:
+
+- Interface type (`RNodeInterface`) and the node's transport-identity hash
+- Discovery name (`RTNode-<short-hash>`)
+- Latitude, longitude and height (decimal degrees / metres)
+- Operating LoRa parameters (frequency, bandwidth, spreading factor, coding rate)
+- IFAC network name and key, when configured
+
+The payload is sealed with an LXMF proof-of-work stamp (cost 14, matching `RNS/Discovery.py`'s `DEFAULT_STAMP_VALUE`), and the resulting stamp is cached so the proof-of-work only re-runs when the advertised parameters change.
+
+| Field | Description |
+|-------|-------------|
+| **Advertise Device** | Enable/Disable advertising this node's parameters |
+| **Latitude** | GPS latitude in decimal degrees (e.g. `37.774929`). North positive, South negative. Leave blank to omit |
+| **Longitude** | GPS longitude in decimal degrees (e.g. `-122.419416`). East positive, West negative. Leave blank to omit |
+| **Use Browser Location** | Button that fills the latitude/longitude fields from the browser's geolocation service (requires user permission; some browsers block it on plain HTTP origins) |
+| **Randomize Offset** | When enabled, the *advertised* coordinates are shifted by a deterministic per-device offset of approximately half a kilometre (about half a mile) for privacy. The exact stored coordinates are not changed, and the offset is stable across announces so the pin doesn't move around |
+
 After saving, the device reboots with the new configuration applied.
 
 ## OLED Display Layout
@@ -292,13 +358,20 @@ The 128×64 OLED is split into two panels:
 
 The firmware runs up to **three RNS interfaces** simultaneously, using different interface modes to control announce propagation and routing behavior:
 
-### LoRa Interface — `MODE_ACCESS_POINT`
+### LoRa Interface — `MODE_FULL`
 
+<<<<<<< HEAD
 The LoRa radio operates in **Access Point mode**. In Reticulum, this means:
 - The interface broadcasts its own announces but **blocks rebroadcast of remote announces** from crossing to LoRa
 - This prevents backbone announces (hundreds of remote destinations) from flooding the limited-bandwidth LoRa channel
 - Local nodes discover the transport node directly; the transport node answers path requests for remote destinations from its cache
 *Note: Only boundary mode has been verified on Xiao esp32s3 and Lilygo T3S3*
+=======
+The LoRa radio operates in **Full mode**. In Reticulum, this means:
+- Announces propagate freely in both directions — LoRa nodes learn about local TCP clients and backbone destinations, and vice versa
+- Backbone announce flooding on the low-bandwidth LoRa channel is controlled by the BOUNDARY firewall (see TCP Backbone Interface below), not by interface mode
+- All LoRa ↔ local TCP and LoRa ↔ backbone routing works without manual path requests
+>>>>>>> upstream/main
 
 ### TCP Backbone Interface — `MODE_BOUNDARY`
 
@@ -307,10 +380,14 @@ The TCP backbone connection uses `MODE_BOUNDARY` (`0x20`), a custom transport mo
 - This prevents the path table (limited to 48 entries on ESP32) from being overwhelmed by thousands of backbone destinations
 - When the path table needs to be culled, **backbone-learned paths are evicted first**, preserving locally-needed LoRa paths
 
-### Optional Local TCP Server — `MODE_ACCESS_POINT`
+### Optional Local TCP Server — `MODE_GATEWAY`
 
+<<<<<<< HEAD
 If enabled, a TCP server on the WiFi network allows local Reticulum nodes to connect. It also uses Access Point mode, with the same announce filtering as LoRa.
 *Note: Only boundary mode has been verified on Xiao esp32s3 and Lilygo T3S3*
+=======
+If enabled, a TCP server on the WiFi network allows local Reticulum nodes to connect. It uses Gateway mode, so announces are forwarded to and from local TCP clients freely (matching standard Reticulum transport node behaviour).
+>>>>>>> upstream/main
 
 **Implementation details:**
 - Each TCP interface must have a **unique name** to produce a unique interface hash — the backbone uses `"TcpInterface"` and the local server uses `"LocalTcpInterface"`. Without distinct names, both interfaces produce the same hash, causing the interface map lookup to fail when routing packets.
@@ -451,13 +528,14 @@ Set the transport node's **Local TCP Server** to **Enabled** (port 4242).
 | `BoundaryConfig.h` | Web-based captive portal for configuration |
 | `TcpInterface.h` | TCP interface for both backbone and local server (implements `RNS::InterfaceImpl`) with HDLC framing, unique naming, and 10 Mbps bitrate |
 | `Display.h` | OLED display layout — transport node status page |
-| `flash.py` | Flash utility — list serial ports, download from GitHub, merge & flash firmware |
+| `flash.py` | Python CLI flash utility — list serial ports, download from GitHub, merge & flash firmware |
+| `docs/index.html` | Browser-based web flasher — auto-detects board, two-step Detect + Flash UI, no Python required |
 | `Boards.h` | Board variant definitions for V3 and V4 |
-| `platformio.ini` | Build targets: `heltec_V3_boundary`, `heltec_V4_boundary`, and `heltec_V4_boundary-local` |
+| `platformio.ini` | Build targets: `rtnode_heltec_v3`, `rtnode_heltec_v4`, and `rtnode_heltec_v4-local` |
 
 ### Library Patches
 
-The firmware depends on [microReticulum](https://github.com/attermann/microReticulum) `0.2.4`, automatically fetched by PlatformIO on first build. After the first build, the library sources under `.pio/libdeps/heltec_V4_boundary/microReticulum/src/` need the patches described in "Routing & Memory Customizations" above. Key files modified:
+The firmware depends on [microReticulum](https://github.com/attermann/microReticulum) `0.2.4`, automatically fetched by PlatformIO on first build. After the first build, the library sources under `.pio/libdeps/rtnode_heltec_v4/microReticulum/src/` need the patches described in "Routing & Memory Customizations" above. Key files modified:
 
 | File | Changes |
 |------|---------|
@@ -468,6 +546,7 @@ The firmware depends on [microReticulum](https://github.com/attermann/microRetic
 
 ### Memory Usage 
 
+<<<<<<< HEAD
 **xiao_esp32s3**
 ```
 rnode_firmware_xiao_esp32s3.elf                                       
@@ -479,6 +558,13 @@ Memory region         Used Size  Region Size  %age Used
     rtc_iram_seg:          33 B       8176 B      0.40%
     rtc_data_seg:          44 B       8176 B      0.54%
     rtc_slow_seg:          16 B         8 KB      0.20%
+=======
+| Resource | Used | Available |
+|----------|------|----------|
+| RAM | ~21.2% | 320 KB |
+| Flash | ~19.3% | 16 MB |
+| PSRAM | Dynamic | 2 MB |
+>>>>>>> upstream/main
 
 RAM:   [===       ]  28.7% (used 94084 bytes from 327680 bytes)
 Flash: [========  ]  83.2% (used 1743845 bytes from 2097152 bytes)

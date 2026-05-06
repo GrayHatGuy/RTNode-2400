@@ -35,6 +35,7 @@
 #include "BoundaryMode.h"
 #include "TcpInterface.h"
 #include "BoundaryConfig.h"
+#include "Advertise.h"
 #include "esp_bt.h"
 #endif
 
@@ -974,6 +975,16 @@ void setup() {
         rtc_node_hash_magic = NODE_HASH_RTC_MAGIC;
       }
       #endif // BOUNDARY_MODE
+
+#ifdef BOUNDARY_MODE
+      // Initialise the Reticulum interface-discovery announcer. Per the
+      // Reticulum manual (https://reticulum.network/manual/interfaces.html)
+      // this announces this node and its parameters on the network so that
+      // maps such as rmap.world can automatically place a pin for it. The
+      // announcer is a no-op until the user has enabled "Advertise Device"
+      // in the captive-portal configuration.
+      advertise_init();
+#endif
 
       HEAD("RNS is READY!", RNS::LOG_TRACE);
 #ifdef BOUNDARY_MODE
@@ -2460,6 +2471,14 @@ void loop() {
   }
 
 #ifdef BOUNDARY_MODE
+  // Periodic interface-discovery announcer (Reticulum manual §Interfaces).
+  // No-op until Reticulum is up and the user has enabled "Advertise Device".
+  if (reticulum) {
+    advertise_loop();
+  }
+#endif
+
+#ifdef BOUNDARY_MODE
   // ── Clear bootloop counter once we reach a stable loop iteration ──────────
   if (bootloop_magic == BOOTLOOP_MAGIC) {
     bootloop_magic = 0;
@@ -2687,6 +2706,10 @@ void sleep_now() {
           headless_led_off();
           headless_led_detach_pwm();
           digitalWrite(LORA_PA_CPS, LOW);
+          if (lora_pa_model == LORA_PA_KCT8103L) {
+            // V4.3 KCT8103L: drop CTX so the FEM is in a known low state.
+            digitalWrite(LORA_PA_CTX, LOW);
+          }
           digitalWrite(LORA_PA_CSD, LOW);
           digitalWrite(LORA_PA_PWR_EN, LOW);
           digitalWrite(Vext, HIGH);

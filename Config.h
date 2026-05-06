@@ -73,7 +73,7 @@
 
 	// MCU independent configuration parameters
 	#ifdef BOUNDARY_MODE
-	const long serial_baudrate  = 921600;
+	const long serial_baudrate  = 115200;
 	#else
 	const long serial_baudrate  = 115200;
 	#endif

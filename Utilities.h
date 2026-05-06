@@ -1387,11 +1387,34 @@ int getTxPower() {
 }
 
 #if HAS_LORA_PA
-	const int tx_gain[PA_GAIN_POINTS] = {PA_GAIN_VALUES};
+	#if BOARD_MODEL == BOARD_HELTEC32_V4
+		// Heltec V4: PA gain table is selected at runtime once the FEM
+		// model has been detected (GC1109 vs KCT8103L). Mirrors upstream
+		// RNode_Firmware 1.86.
+		bool pa_values_determined = false;
+		int  tx_gain[PA_GAIN_POINTS] = {0};
+	#else
+		bool pa_values_determined = true;
+		const int tx_gain[PA_GAIN_POINTS] = {PA_GAIN_VALUES};
+	#endif
 #endif
+
+extern uint8_t lora_pa_model;
+void determine_pa_values() {
+	#if HAS_LORA_PA && BOARD_MODEL == BOARD_HELTEC32_V4
+		if (lora_pa_model == LORA_PA_GC1109) {
+			for (int i = 0; i < PA_GAIN_POINTS; i++) { tx_gain[i] = PA_GC1109_VALUES[i]; }
+			pa_values_determined = true;
+		} else if (lora_pa_model == LORA_PA_KCT8103L) {
+			for (int i = 0; i < PA_GAIN_POINTS; i++) { tx_gain[i] = PA_KCT8103L_VALUES[i]; }
+			pa_values_determined = true;
+		}
+	#endif
+}
 
 int map_target_power_to_modem_output(int target_tx_power) {
 	#if HAS_LORA_PA
+		if (!pa_values_determined) { determine_pa_values(); }
 		int modem_output_dbm = -9;
 		for (int i = 0; i < PA_GAIN_POINTS; i++) {
 			int gain = tx_gain[i];

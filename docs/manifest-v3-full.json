@@ -1,0 +1,15 @@
+{
+  "name": "RTNode - Heltec V3 (First Install)",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "firmware/rtnode_heltec_v3_merged.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

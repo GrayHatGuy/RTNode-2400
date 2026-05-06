@@ -155,6 +155,12 @@
     #endif
   #endif
 
+  // LoRa front-end / PA model identifiers (runtime-selected on boards
+  // that ship multiple FEM revisions). Mirrors upstream RNode_Firmware 1.86.
+  #define LORA_PA_UNKNOWN  0x00
+  #define LORA_PA_GC1109   0x01
+  #define LORA_PA_KCT8103L 0x02
+
   #define HAS_DISPLAY false
   #define HAS_BLUETOOTH false
   #define HAS_BLE false
@@ -433,19 +439,31 @@
       const int pin_tcxo_enable = -1;
       #define HAS_BUSY true
       #define DIO2_AS_RF_SWITCH true
+      #define OCP_TUNED 0x28           // Upstream 1.86: bumped from 0x18
       #define LNA_GD_THRSHLD (-109)
       #define LNA_GD_LIMIT   (-89)
 
-      #define LORA_LNA_GAIN  17
+      #define LORA_LNA_GAIN          17  // GC1109 (V4.2) default
+      #define LORA_LNA_KCT8103L_GAIN 21  // KCT8103L (V4.3)
       #define LORA_LNA_GVT   12
-      #define LORA_PA_GC1109 true
+
+      // V4.2 (GC1109) and V4.3 (KCT8103L) FEM share these pins.
+      // FEM type is auto-detected at runtime in sx126x.cpp via the GPIO2
+      // (CSD) default pull level: GC1109 → LOW, KCT8103L → HIGH.
+      //   GC1109   : CSD=GPIO2 (enable, HIGH), CPS=GPIO46 (PA mode)
+      //   KCT8103L : CSD=GPIO2 (enable, HIGH), CTX=GPIO5  (TX/RX path)
+      //              CPS is wired to DIO2 (SX126X_DIO2_AS_RF_SWITCH).
+      #define LORA_PA_MODEL   LORA_PA_UNKNOWN
       #define LORA_PA_PWR_EN  7
       #define LORA_PA_CSD     2
       #define LORA_PA_CPS    46
+      #define LORA_PA_CTX     5
 
       #define PA_MAX_OUTPUT  28
       #define PA_GAIN_POINTS 22
-      #define PA_GAIN_VALUES 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10, 9, 9, 8, 7
+      // Per-FEM PA gain tables (Utilities.h selects at runtime).
+      const int PA_GC1109_VALUES[PA_GAIN_POINTS]   = {11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10,  9, 9, 8, 7};
+      const int PA_KCT8103L_VALUES[PA_GAIN_POINTS] = {13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 12, 12, 11, 11, 10, 9, 8, 7};
 
       const int pin_cs = 8;
       const int pin_busy = 13;

@@ -439,7 +439,10 @@ namespace ArduinoJson {
 	}
 	// Deserialize
 	inline void convertFromJson(JsonVariantConst src, RNS::Bytes& dst) {
-		dst.assignHex(src.as<const char*>());
+		const char* hex = src.as<const char*>();
+		if (hex != nullptr) {
+			dst.assignHex(hex);
+		}
 	}
 	inline bool canConvertFromJson(JsonVariantConst src, const RNS::Bytes&) {
 		return src.is<const char*>();
