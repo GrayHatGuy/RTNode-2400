@@ -6,7 +6,7 @@
 //  Compatible with RNS/Discovery.py (InterfaceAnnouncer / InterfaceAnnounceHandler)
 //  and LXMF/LXStamper.py (stamp generation).
 //
-//  When BOUNDARY_MODE is active and the user has enabled "Advertise Device" in
+//  When FIREWALL_MODE is active and the user has enabled "Advertise Device" in
 //  the captive-portal configuration, this module periodically sends an
 //  RNS announce on a destination with aspects "rnstransport.discovery.interface"
 //  whose app_data is:
@@ -20,7 +20,7 @@
 #ifndef ADVERTISE_H
 #define ADVERTISE_H
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 
 #include <Arduino.h>
 #include <Bytes.h>
@@ -34,7 +34,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "BoundaryMode.h"
+#include "FirewallMode.h"
 
 #if defined(ESP32)
 #include <esp_task_wdt.h>
@@ -335,9 +335,9 @@ static RNS::Bytes advertise_build_info() {
     // Determine which optional fields will be included so we can write a
     // correct map header up front.
     bool include_ifac =
-        boundary_state.ifac_enabled &&
-        (boundary_state.ifac_netname[0] != '\0' ||
-         boundary_state.ifac_passphrase[0] != '\0');
+        firewall_state.ifac_enabled &&
+        (firewall_state.ifac_netname[0] != '\0' ||
+         firewall_state.ifac_passphrase[0] != '\0');
 
     // Required keys: INTERFACE_TYPE, TRANSPORT, TRANSPORT_ID, NAME,
     //                LATITUDE, LONGITUDE, HEIGHT,
@@ -369,8 +369,8 @@ static RNS::Bytes advertise_build_info() {
     {
         char name_buf[40];
         const char* adv_name;
-        if (boundary_state.node_name[0] != '\0') {
-            adv_name = boundary_state.node_name;
+        if (firewall_state.node_name[0] != '\0') {
+            adv_name = firewall_state.node_name;
         } else {
             const char* hex = (rtc_node_hash_magic == NODE_HASH_RTC_MAGIC && rtc_node_hash_hex[0] != '\0')
                               ? rtc_node_hash_hex : "";
@@ -383,9 +383,9 @@ static RNS::Bytes advertise_build_info() {
 
     // LATITUDE / LONGITUDE (float64) — apply optional privacy jitter.
     {
-        double adv_lat = boundary_state.advert_lat;
-        double adv_lon = boundary_state.advert_lon;
-        if (boundary_state.advert_jitter && advertise_destination) {
+        double adv_lat = firewall_state.advert_lat;
+        double adv_lon = firewall_state.advert_lon;
+        if (firewall_state.advert_jitter && advertise_destination) {
             advertise_apply_jitter(adv_lat, adv_lon, advertise_destination.hash());
         }
         adv_mp_key(packed, ADV_FIELD_LATITUDE);
@@ -410,9 +410,9 @@ static RNS::Bytes advertise_build_info() {
 
     if (include_ifac) {
         adv_mp_key(packed, ADV_FIELD_IFAC_NETNAME);
-        adv_mp_str(packed, boundary_state.ifac_netname);
+        adv_mp_str(packed, firewall_state.ifac_netname);
         adv_mp_key(packed, ADV_FIELD_IFAC_NETKEY);
-        adv_mp_str(packed, boundary_state.ifac_passphrase);
+        adv_mp_str(packed, firewall_state.ifac_passphrase);
     }
 
     return packed;
@@ -483,7 +483,7 @@ inline void advertise_init() {
     advertise_next_run_ms    = millis() + ADV_INITIAL_DELAY_MS;
     advertise_announce_interval_ms = ADV_DEFAULT_ANNOUNCE_INTERVAL_S * 1000UL;
 
-    if (boundary_state.advert_enabled) {
+    if (firewall_state.advert_enabled) {
         RNS::info("[Advertise] Device advertisement ENABLED — first announce in ~" +
                   std::to_string(ADV_INITIAL_DELAY_MS / 1000) + "s");
     } else {
@@ -494,7 +494,7 @@ inline void advertise_init() {
 // Periodic loop hook — call from the main loop().
 inline void advertise_loop() {
     if (!advertise_initialised) return;
-    if (!boundary_state.advert_enabled) return;
+    if (!firewall_state.advert_enabled) return;
 
     uint32_t now = millis();
     // Handle uint32 wrap-around: only treat as "due" when the unsigned
@@ -510,5 +510,5 @@ inline void advertise_loop() {
     advertise_next_run_ms    = now + advertise_announce_interval_ms;
 }
 
-#endif // BOUNDARY_MODE
+#endif // FIREWALL_MODE
 #endif // ADVERTISE_H

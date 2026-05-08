@@ -884,8 +884,8 @@ int8_t  led_standby_direction = 0;
 #endif
 
 void serial_write(uint8_t byte) {
-	#ifdef BOUNDARY_MODE
-		// No KISS serial output in boundary mode - serial is used for debug logging only
+	#ifdef FIREWALL_MODE
+		// No KISS serial output in firewall mode - serial is used for debug logging only
 		return;
 	#endif
 	#if HAS_BLUETOOTH || HAS_BLE == true

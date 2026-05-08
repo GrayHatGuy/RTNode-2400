@@ -101,13 +101,13 @@ using namespace RNS::Utilities;
 
 /*static*/ Reticulum Transport::_owner({Type::NONE});
 
-// BOUNDARY MODE Whitelist 1: addresses of local devices (from LoRa and LocalTCP interfaces)
+// FIREWALL MODE Whitelist 1: addresses of local devices (from LoRa and LocalTCP interfaces)
 static std::set<Bytes> _boundary_local_addresses;
-// BOUNDARY MODE Whitelist 2: addresses mentioned in packets from local devices
+// FIREWALL MODE Whitelist 2: addresses mentioned in packets from local devices
 static std::set<Bytes> _boundary_mentioned_addresses;
 static const uint16_t _boundary_maxsize = 200;
 
-// BOUNDARY MODE: Check if an interface is the backbone
+// FIREWALL MODE: Check if an interface is the backbone
 static bool is_backbone_interface(const Interface& iface) {
 	return iface.is_backbone();
 }
@@ -471,7 +471,7 @@ static bool is_backbone_interface(const Interface& iface) {
 				_packet_hashlist.erase(_packet_hashlist.begin(), iter);
 			}
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 			// Cull the boundary mentioned addresses if it has reached its max size
 			if (_boundary_mentioned_addresses.size() > _boundary_maxsize) {
 				std::set<Bytes>::iterator iter = _boundary_mentioned_addresses.begin();
@@ -1437,7 +1437,7 @@ static bool is_backbone_interface(const Interface& iface) {
 	if (accept) {
 		TRACE("Transport::inbound: Packet accepted by filter");
 
-		// BOUNDARY MODE: Comprehensive firewall for backbone traffic.
+		// FIREWALL MODE: Comprehensive firewall for backbone traffic.
 		//
 		// Three rules:
 		//   1. Addresses that touch local interfaces (RNode/LoRa, LocalTCP)
@@ -1452,7 +1452,7 @@ static bool is_backbone_interface(const Interface& iface) {
 		// announce verbatim. Ratchet IDs are derived locally and never
 		// appear as transport-level routing identifiers, so no special
 		// handling is needed here.
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 		{
 			bool is_backbone = is_backbone_interface(packet.receiving_interface());
 			if (is_backbone) {
@@ -1562,7 +1562,7 @@ static bool is_backbone_interface(const Interface& iface) {
 		}
 		cache_packet(packet);
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 		// Log ALL non-announce packets arriving from local (non-backbone) interfaces
 		// to diagnose whether Sideband is sending ANY response packets
 		if (!is_backbone_interface(packet.receiving_interface()) && packet.packet_type() != Type::Packet::ANNOUNCE) {
@@ -1737,8 +1737,8 @@ static bool is_backbone_interface(const Interface& iface) {
 
 						Interface outbound_interface = destination_entry.receiving_interface();
 
-#ifdef BOUNDARY_MODE
-						// In boundary mode, never route a packet from backbone back to backbone.
+#ifdef FIREWALL_MODE
+						// In firewall mode, never route a packet from backbone back to backbone.
 						// The upstream server sent us this packet because we are the next hop,
 						// so the destination must be on our local side.
 						if (is_backbone_interface(packet.receiving_interface()) && is_backbone_interface(outbound_interface)) {
@@ -1810,11 +1810,11 @@ static bool is_backbone_interface(const Interface& iface) {
 						transmit(outbound_interface, new_raw);
 #endif
 						destination_entry._timestamp = OS::time();
-						} // boundary mode else
+						} // firewall mode else
 					}
 					else {
-#ifdef BOUNDARY_MODE
-						// BOUNDARY MODE: No path to destination. If packet came from
+#ifdef FIREWALL_MODE
+						// FIREWALL MODE: No path to destination. If packet came from
 						// a local device (non-backbone), request the path — but only if
 						// this isn't a link_id (link data is handled by link transport).
 						{
@@ -1838,8 +1838,8 @@ static bool is_backbone_interface(const Interface& iface) {
 			}
 			else {
 				TRACE("Transport::inbound: Either packet is announce or packet has no next-hop (possibly for a local destination)");
-#ifdef BOUNDARY_MODE
-				// BOUNDARY MODE: If this packet came from a local interface and we
+#ifdef FIREWALL_MODE
+				// FIREWALL MODE: If this packet came from a local interface and we
 				// have a path to the destination, wrap it with transport headers
 				// and forward it through the backbone as the first transport hop.
 				// Skip ANNOUNCE and PROOF packets — announces have their own handling,
@@ -1946,7 +1946,7 @@ static bool is_backbone_interface(const Interface& iface) {
 						}
 					}
 					else {
-						// BOUNDARY MODE REVERSE: Packet came from backbone,
+						// FIREWALL MODE REVERSE: Packet came from backbone,
 						// check if destination is a local LoRa device and forward it.
 						if (_boundary_local_addresses.find(packet.destination_hash()) != _boundary_local_addresses.end()) {
 							auto destination_iter = _destination_table.find(packet.destination_hash());
@@ -2544,8 +2544,8 @@ static bool is_backbone_interface(const Interface& iface) {
 						DEBUG("Destination " + packet.destination_hash().toHex() + " is now " + std::to_string(announce_hops) + " hops away via " + received_from.toHex() + " on " + packet.receiving_interface().toString());
 						DEBUG("DIAG: STORED path " + packet.destination_hash().toHex().substr(0,8) + " hops=" + std::to_string(announce_hops) + " iface=" + packet.receiving_interface().toString());
 
-						// BOUNDARY MODE: Register destinations seen via non-backbone interfaces (Whitelist 1)
-#ifdef BOUNDARY_MODE
+						// FIREWALL MODE: Register destinations seen via non-backbone interfaces (Whitelist 1)
+#ifdef FIREWALL_MODE
 						{
 							bool is_backbone = is_backbone_interface(packet.receiving_interface());
 							if (!is_backbone) {
@@ -3836,7 +3836,7 @@ will announce it.
 				attached_interface
 			}});
 
-#if defined(BOUNDARY_MODE)
+#if defined(FIREWALL_MODE)
 			// BOUNDARY: Track this destination in Whitelist 2 so the path
 			// response announce from the backbone will be allowed through
 			_boundary_mentioned_addresses.insert(destination_hash);

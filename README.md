@@ -376,8 +376,8 @@ Set the transport node's **Local TCP Server** to **Enabled** (port 4242).
 | File | Purpose |
 |------|---------|
 | `RNode_Firmware.ino` | Main firmware — transport mode initialization, interface setup, button handling |
-| `BoundaryMode.h` | Transport node state struct, EEPROM load/save, configuration defaults |
-| `BoundaryConfig.h` | Web-based captive portal for configuration |
+| `FirewallMode.h` | Transport node state struct, EEPROM load/save, configuration defaults |
+| `FirewallConfig.h` | Web-based captive portal for configuration |
 | `TcpInterface.h` | TCP interface for both backbone and local server (implements `RNS::InterfaceImpl`) with HDLC framing, unique naming, and 10 Mbps bitrate |
 | `Display.h` | OLED display layout — transport node status page |
 | `flash.py` | Python CLI flash utility — list serial ports, download from GitHub, merge & flash firmware |

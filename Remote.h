@@ -78,8 +78,8 @@ void wifi_remote_start_ap() {
 void wifi_remote_start_sta() {
   WiFi.mode(WIFI_STA);
 
-#ifdef BOUNDARY_MODE
-  // Boundary mode does not expose static STA addressing in its config flow.
+#ifdef FIREWALL_MODE
+  // Firewall mode does not expose static STA addressing in its config flow.
   // Always return the station interface to DHCP so stale legacy EEPROM data
   // cannot pin the node to an unintended address.
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);

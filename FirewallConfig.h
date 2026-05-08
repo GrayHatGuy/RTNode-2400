@@ -1,10 +1,10 @@
-// Copyright (C) 2026, Boundary Mode Extension
+// Copyright (C) 2026, Firewall Mode Extension
 // Based on microReticulum_Firmware by Mark Qvist
 //
-// BoundaryConfig.h — Captive-portal web configuration for the legacy
-// "Boundary Mode" path. This should be renamed to "Transport Mode"
+// FirewallConfig.h — Captive-portal web configuration for the legacy
+// "Firewall Mode" path.
 // together with the rest of the boundary-mode terminology. In this fork,
-// transport/boundary mode is the only intended mode of operation.
+// Firewall Mode is the only intended mode of operation in this fork.
 // When triggered (first boot with no config, or button hold >5s),
 // the device starts a WiFi AP with a web form for all settings:
 //   WiFi STA credentials, TCP backbone params, LoRa radio params,
@@ -15,14 +15,15 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-#ifndef BOUNDARY_CONFIG_H
-#define BOUNDARY_CONFIG_H
+#ifndef FIREWALL_CONFIG_H
+#define FIREWALL_CONFIG_H
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include "MdnsService.h"
 
 // ─── Node hash (cached in RTC by normal boot, read here without starting RNS) ─
 #define NODE_HASH_RTC_MAGIC  0x504B4841UL
@@ -160,7 +161,34 @@ static void config_send_html() {
         "<label>Name</label>"
         "<input name='node_name' maxlength='32' placeholder='e.g. My RNode' value='"
     );
-    html += String(boundary_state.node_name);
+    html += String(firewall_state.node_name);
+    html += F("'>");
+
+    // ── mDNS Hostname Section ──
+    html += F(
+        "<h2>&#x1f310; Local Network Name (mDNS)</h2>"
+        "<p class='note'>Publishes the device on the local network so you can reach it as "
+        "<code>&lt;name&gt;.local</code> from any computer in your LAN without knowing its IP. "
+        "Disable to suppress all multicast announcements.</p>"
+        "<label>mDNS</label>"
+        "<select name='mdns_en'>"
+    );
+    html += F("<option value='1'");
+    if (firewall_state.mdns_enabled) html += F(" selected");
+    html += F(">Enabled</option>");
+    html += F("<option value='0'");
+    if (!firewall_state.mdns_enabled) html += F(" selected");
+    html += F(">Disabled</option>");
+    html += F("</select>");
+
+    html += F(
+        "<label>Hostname</label>"
+        "<p class='note'>Leave blank for the default <code>rtnode&lt;XXXX&gt;.local</code> "
+        "(last 4 hex chars of the device MAC). "
+        "Allowed: lowercase letters, digits and hyphens; first/last char must be alphanumeric.</p>"
+        "<input name='mdns_name' maxlength='32' placeholder='rtnode' value='"
+    );
+    html += String(firewall_state.mdns_hostname);
     html += F("'>");
 
     html += F(
@@ -169,10 +197,10 @@ static void config_send_html() {
         "<select name='wifi_en'>"
     );
     html += F("<option value='1'");
-    if (boundary_state.wifi_enabled) html += F(" selected");
+    if (firewall_state.wifi_enabled) html += F(" selected");
     html += F(">Enabled</option>");
     html += F("<option value='0'");
-    if (!boundary_state.wifi_enabled) html += F(" selected");
+    if (!firewall_state.wifi_enabled) html += F(" selected");
     html += F(">Disabled (LoRa-only repeater)</option>");
     html += F("</select>");
 
@@ -196,21 +224,21 @@ static void config_send_html() {
         "<select name='tcp_mode'>"
     );
     html += F("<option value='0'");
-    if (boundary_state.tcp_mode == 0) html += F(" selected");
+    if (firewall_state.tcp_mode == 0) html += F(" selected");
     html += F(">Disabled</option>");
     html += F("<option value='1'");
-    if (boundary_state.tcp_mode == 1) html += F(" selected");
+    if (firewall_state.tcp_mode == 1) html += F(" selected");
     html += F(">Client (connect to backbone)</option>");
     html += F("</select>");
 
     html += F("<label>Backbone Host</label>");
     html += F("<input name='bb_host' maxlength='63' placeholder='e.g. 192.168.1.100' value='");
-    html += String(boundary_state.backbone_host);
+    html += String(firewall_state.backbone_host);
     html += F("'>");
 
     html += F("<label>Backbone Port</label>");
     html += F("<input name='bb_port' type='number' min='1' max='65535' value='");
-    html += String(boundary_state.backbone_port);
+    html += String(firewall_state.backbone_port);
     html += F("'>");
 
     // ── Local TCP Server Section ──
@@ -222,16 +250,16 @@ static void config_send_html() {
         "<select name='ap_tcp_en'>"
     );
     html += F("<option value='0'");
-    if (!boundary_state.ap_tcp_enabled) html += F(" selected");
+    if (!firewall_state.ap_tcp_enabled) html += F(" selected");
     html += F(">Disabled</option>");
     html += F("<option value='1'");
-    if (boundary_state.ap_tcp_enabled) html += F(" selected");
+    if (firewall_state.ap_tcp_enabled) html += F(" selected");
     html += F(">Enabled</option>");
     html += F("</select>");
 
     html += F("<label>TCP Port</label>");
     html += F("<input name='ap_tcp_port' type='number' min='1' max='65535' value='");
-    html += String(boundary_state.ap_tcp_port);
+    html += String(firewall_state.ap_tcp_port);
     html += F("'>");
 
     // ── LoRa Radio Section ──
@@ -314,8 +342,8 @@ static void config_send_html() {
     // resolution. Common preset: EU868 = 1% on the 1hr limit.
     char st_al_str[16];
     char lt_al_str[16];
-    dtostrf(boundary_state.st_airtime_limit * 100.0f, 1, 1, st_al_str);
-    dtostrf(boundary_state.lt_airtime_limit * 100.0f, 1, 1, lt_al_str);
+    dtostrf(firewall_state.st_airtime_limit * 100.0f, 1, 1, st_al_str);
+    dtostrf(firewall_state.lt_airtime_limit * 100.0f, 1, 1, lt_al_str);
     html += F("<div class='row'>");
     html += F("<div><label>15s limit (%)</label>"
               "<input name='stal' type='number' step='0.1' min='0' max='25' value='");
@@ -338,21 +366,21 @@ static void config_send_html() {
         "<select name='ifac_en'>"
     );
     html += F("<option value='0'");
-    if (!boundary_state.ifac_enabled) html += F(" selected");
+    if (!firewall_state.ifac_enabled) html += F(" selected");
     html += F(">Disabled</option>");
     html += F("<option value='1'");
-    if (boundary_state.ifac_enabled) html += F(" selected");
+    if (firewall_state.ifac_enabled) html += F(" selected");
     html += F(">Enabled</option>");
     html += F("</select>");
 
     html += F("<label>Network Name</label>");
     html += F("<input name='ifac_name' maxlength='32' placeholder='e.g. MyNetwork' value='");
-    html += String(boundary_state.ifac_netname);
+    html += String(firewall_state.ifac_netname);
     html += F("'>");
 
     html += F("<label>Passphrase</label>");
     html += F("<input name='ifac_pass' type='password' maxlength='32' placeholder='Shared secret' value='");
-    html += String(boundary_state.ifac_passphrase);
+    html += String(firewall_state.ifac_passphrase);
     html += F("'>");
 
     // ── Device Advertisement Section ──
@@ -366,10 +394,10 @@ static void config_send_html() {
         "<select name='advert_en'>"
     );
     html += F("<option value='0'");
-    if (!boundary_state.advert_enabled) html += F(" selected");
+    if (!firewall_state.advert_enabled) html += F(" selected");
     html += F(">Disabled</option>");
     html += F("<option value='1'");
-    if (boundary_state.advert_enabled) html += F(" selected");
+    if (firewall_state.advert_enabled) html += F(" selected");
     html += F(">Enabled</option>");
     html += F("</select>");
 
@@ -380,11 +408,11 @@ static void config_send_html() {
     char lon_str[32];
     lat_str[0] = '\0';
     lon_str[0] = '\0';
-    if (boundary_state.advert_enabled ||
-        boundary_state.advert_lat != 0.0 ||
-        boundary_state.advert_lon != 0.0) {
-        dtostrf(boundary_state.advert_lat, 1, 6, lat_str);
-        dtostrf(boundary_state.advert_lon, 1, 6, lon_str);
+    if (firewall_state.advert_enabled ||
+        firewall_state.advert_lat != 0.0 ||
+        firewall_state.advert_lon != 0.0) {
+        dtostrf(firewall_state.advert_lat, 1, 6, lat_str);
+        dtostrf(firewall_state.advert_lon, 1, 6, lon_str);
     }
 
     html += F("<div class='row'>");
@@ -405,10 +433,10 @@ static void config_send_html() {
     html += F("<label>Randomize Offset</label>"
               "<select name='advert_jitter'>");
     html += F("<option value='0'");
-    if (!boundary_state.advert_jitter) html += F(" selected");
+    if (!firewall_state.advert_jitter) html += F(" selected");
     html += F(">Disabled</option>");
     html += F("<option value='1'");
-    if (boundary_state.advert_jitter) html += F(" selected");
+    if (firewall_state.advert_jitter) html += F(" selected");
     html += F(">Enabled (~0.5 km / 0.5 mi)</option>");
     html += F("</select>");
     html += F("<p class='note'>When enabled, the advertised coordinates are shifted by a "
@@ -499,7 +527,7 @@ static void config_handle_save() {
     // Set WiFi mode to STA
     EEPROM.write(eeprom_addr(ADDR_CONF_WIFI), WR_WIFI_STA);
 
-    // Boundary mode always uses DHCP on the STA interface. Clear the legacy
+    // Firewall mode always uses DHCP on the STA interface. Clear the legacy
     // static IP and netmask slots so stale values from older firmware or tools
     // cannot force a persistent static address.
     for (int i = 0; i < 4; i++) {
@@ -508,7 +536,7 @@ static void config_handle_save() {
     }
 
     // ── WiFi enable setting ──
-    boundary_state.wifi_enabled = (config_server->arg("wifi_en").toInt() == 1);
+    firewall_state.wifi_enabled = (config_server->arg("wifi_en").toInt() == 1);
 
     // ── Display blanking (EEPROM stores minutes, 0 = disabled) ──
     int blank_minutes = config_server->arg("disp_blank").toInt();
@@ -531,43 +559,43 @@ static void config_handle_save() {
     eeprom_update(eeprom_addr(ADDR_CONF_DROT), (uint8_t)display_rotation);
 
     // ── TCP backbone settings ──
-    boundary_state.tcp_mode = (uint8_t)config_server->arg("tcp_mode").toInt(); // 0=disabled, 1=client
-    if (boundary_state.tcp_mode > 1) boundary_state.tcp_mode = 0;
-    boundary_state.tcp_port = (uint16_t)config_server->arg("tcp_port").toInt();
-    if (boundary_state.tcp_port == 0) boundary_state.tcp_port = 4242;
+    firewall_state.tcp_mode = (uint8_t)config_server->arg("tcp_mode").toInt(); // 0=disabled, 1=client
+    if (firewall_state.tcp_mode > 1) firewall_state.tcp_mode = 0;
+    firewall_state.tcp_port = (uint16_t)config_server->arg("tcp_port").toInt();
+    if (firewall_state.tcp_port == 0) firewall_state.tcp_port = 4242;
 
     String bb_host = config_server->arg("bb_host");
-    memset(boundary_state.backbone_host, 0, sizeof(boundary_state.backbone_host));
-    strncpy(boundary_state.backbone_host, bb_host.c_str(), sizeof(boundary_state.backbone_host) - 1);
+    memset(firewall_state.backbone_host, 0, sizeof(firewall_state.backbone_host));
+    strncpy(firewall_state.backbone_host, bb_host.c_str(), sizeof(firewall_state.backbone_host) - 1);
 
-    boundary_state.backbone_port = (uint16_t)config_server->arg("bb_port").toInt();
-    if (boundary_state.backbone_port == 0) boundary_state.backbone_port = 4242;
+    firewall_state.backbone_port = (uint16_t)config_server->arg("bb_port").toInt();
+    if (firewall_state.backbone_port == 0) firewall_state.backbone_port = 4242;
 
     // ── Local TCP server settings ──
-    boundary_state.ap_tcp_enabled = (config_server->arg("ap_tcp_en").toInt() == 1);
-    boundary_state.ap_tcp_port = (uint16_t)config_server->arg("ap_tcp_port").toInt();
-    if (boundary_state.ap_tcp_port == 0) boundary_state.ap_tcp_port = 4242;
+    firewall_state.ap_tcp_enabled = (config_server->arg("ap_tcp_en").toInt() == 1);
+    firewall_state.ap_tcp_port = (uint16_t)config_server->arg("ap_tcp_port").toInt();
+    if (firewall_state.ap_tcp_port == 0) firewall_state.ap_tcp_port = 4242;
 
     // ── IFAC settings ──
-    boundary_state.ifac_enabled = (config_server->arg("ifac_en").toInt() == 1);
+    firewall_state.ifac_enabled = (config_server->arg("ifac_en").toInt() == 1);
 
     String ifac_name = config_server->arg("ifac_name");
-    memset(boundary_state.ifac_netname, 0, sizeof(boundary_state.ifac_netname));
-    strncpy(boundary_state.ifac_netname, ifac_name.c_str(), sizeof(boundary_state.ifac_netname) - 1);
+    memset(firewall_state.ifac_netname, 0, sizeof(firewall_state.ifac_netname));
+    strncpy(firewall_state.ifac_netname, ifac_name.c_str(), sizeof(firewall_state.ifac_netname) - 1);
 
     String ifac_pass = config_server->arg("ifac_pass");
-    memset(boundary_state.ifac_passphrase, 0, sizeof(boundary_state.ifac_passphrase));
-    strncpy(boundary_state.ifac_passphrase, ifac_pass.c_str(), sizeof(boundary_state.ifac_passphrase) - 1);
+    memset(firewall_state.ifac_passphrase, 0, sizeof(firewall_state.ifac_passphrase));
+    strncpy(firewall_state.ifac_passphrase, ifac_pass.c_str(), sizeof(firewall_state.ifac_passphrase) - 1);
 
     // If IFAC is enabled but both fields are empty, disable it
-    if (boundary_state.ifac_enabled &&
-        boundary_state.ifac_netname[0] == '\0' &&
-        boundary_state.ifac_passphrase[0] == '\0') {
-        boundary_state.ifac_enabled = false;
+    if (firewall_state.ifac_enabled &&
+        firewall_state.ifac_netname[0] == '\0' &&
+        firewall_state.ifac_passphrase[0] == '\0') {
+        firewall_state.ifac_enabled = false;
     }
 
     // ── Device advertisement settings ──
-    boundary_state.advert_enabled = (config_server->arg("advert_en").toInt() == 1);
+    firewall_state.advert_enabled = (config_server->arg("advert_en").toInt() == 1);
 
     // Empty lat/lon strings are treated as "not set" → 0.0. Otherwise parse
     // and clamp to valid ranges; out-of-range values are silently coerced
@@ -577,34 +605,63 @@ static void config_handle_save() {
     lat_arg.trim();
     lon_arg.trim();
     if (lat_arg.length() == 0) {
-        boundary_state.advert_lat = 0.0;
+        firewall_state.advert_lat = 0.0;
     } else {
         double lat_val = lat_arg.toDouble();
         if (lat_val < -90.0 || lat_val > 90.0 || isnan(lat_val)) {
             lat_val = 0.0;
         }
-        boundary_state.advert_lat = lat_val;
+        firewall_state.advert_lat = lat_val;
     }
     if (lon_arg.length() == 0) {
-        boundary_state.advert_lon = 0.0;
+        firewall_state.advert_lon = 0.0;
     } else {
         double lon_val = lon_arg.toDouble();
         if (lon_val < -180.0 || lon_val > 180.0 || isnan(lon_val)) {
             lon_val = 0.0;
         }
-        boundary_state.advert_lon = lon_val;
+        firewall_state.advert_lon = lon_val;
     }
 
-    boundary_state.advert_jitter = (config_server->arg("advert_jitter").toInt() == 1);
+    firewall_state.advert_jitter = (config_server->arg("advert_jitter").toInt() == 1);
 
     // ── Node name ──
     String node_name_arg = config_server->arg("node_name");
     node_name_arg.trim();
-    memset(boundary_state.node_name, 0, sizeof(boundary_state.node_name));
-    strncpy(boundary_state.node_name, node_name_arg.c_str(), sizeof(boundary_state.node_name) - 1);
+    memset(firewall_state.node_name, 0, sizeof(firewall_state.node_name));
+    strncpy(firewall_state.node_name, node_name_arg.c_str(), sizeof(firewall_state.node_name) - 1);
+
+    // ── mDNS enable + hostname ──
+    firewall_state.mdns_enabled = (config_server->arg("mdns_en").toInt() != 0);
+    // Lowercase, strip whitespace, allow only [a-z0-9-]; reject leading/trailing
+    // hyphens.  Empty input falls back to the auto-generated `rtnode<XXXX>` at
+    // mDNS start time.
+    {
+        String mdns_arg = config_server->arg("mdns_name");
+        mdns_arg.trim();
+        mdns_arg.toLowerCase();
+        char clean[33];
+        size_t j = 0;
+        for (size_t i = 0; i < (size_t)mdns_arg.length() && j < sizeof(clean) - 1; i++) {
+            char c = mdns_arg.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+                clean[j++] = c;
+            }
+        }
+        clean[j] = '\0';
+        // Strip leading/trailing hyphens to keep RFC-952-ish compliance.
+        while (j > 0 && clean[j - 1] == '-') clean[--j] = '\0';
+        size_t start = 0;
+        while (clean[start] == '-') start++;
+        memset(firewall_state.mdns_hostname, 0, sizeof(firewall_state.mdns_hostname));
+        if (clean[start] != '\0') {
+            strncpy(firewall_state.mdns_hostname, clean + start,
+                    sizeof(firewall_state.mdns_hostname) - 1);
+        }
+    }
 
     // Save boundary config to EEPROM
-    boundary_save_config();
+    firewall_save_config();
 
     // ── LoRa radio settings ──
     String freq_str = config_server->arg("freq");
@@ -627,7 +684,7 @@ static void config_handle_save() {
     if (txp_val >= 2 && txp_val <= 30) lora_txp = txp_val;
 
     // Airtime / duty-cycle limits. Empty / out-of-range / 0 = disabled.
-    // boundary_save_config() has already run above, so write the bytes
+    // firewall_save_config() has already run above, so write the bytes
     // directly here alongside the other LoRa parameters.
     {
         String stal_arg = config_server->arg("stal");
@@ -640,8 +697,8 @@ static void config_handle_save() {
         if (lt_pct < 0.0f || isnan(lt_pct)) lt_pct = 0.0f;
         if (st_pct > 25.0f) st_pct = 25.0f;
         if (lt_pct > 25.0f) lt_pct = 25.0f;
-        boundary_state.st_airtime_limit = st_pct / 100.0f;
-        boundary_state.lt_airtime_limit = lt_pct / 100.0f;
+        firewall_state.st_airtime_limit = st_pct / 100.0f;
+        firewall_state.lt_airtime_limit = lt_pct / 100.0f;
         uint8_t st_byte = (uint8_t)(st_pct * 10.0f + 0.5f);
         uint8_t lt_byte = (uint8_t)(lt_pct * 10.0f + 0.5f);
         EEPROM.write(config_addr(ADDR_CONF_ST_AL), st_byte);
@@ -704,7 +761,7 @@ bool boundary_needs_config() {
     // configured by RTNode or was flashed from a different firmware family
     // such as stock RNode. Force the portal so RTNode can claim and rewrite
     // its persisted settings explicitly.
-    if (!boundary_app_marker_valid()) {
+    if (!firewall_app_marker_valid()) {
         return true;
     }
 
@@ -716,11 +773,11 @@ bool boundary_needs_config() {
     }
     ssid[32] = '\0';
 
-    // Also check boundary mode enable flag
+    // Also check firewall mode enable flag
     uint8_t bmode = EEPROM.read(config_addr(ADDR_CONF_BMODE));
 
     // Need config if no SSID set and boundary not yet configured
-    if (ssid[0] == '\0' && bmode != BOUNDARY_ENABLE_BYTE) {
+    if (ssid[0] == '\0' && bmode != FIREWALL_ENABLE_BYTE) {
         return true;
     }
     return false;
@@ -731,6 +788,10 @@ void config_portal_start() {
     if (config_portal_active) return;
 
     Serial.println("[Config] Starting configuration portal...");
+
+    // Tear down any STA-mode mDNS before flipping the radio to AP — the
+    // ESPmDNS state must not survive a WiFi mode change.
+    mdns_service::stop();
 
     // Stop any existing WiFi
     WiFi.softAPdisconnect(true);
@@ -762,6 +823,12 @@ void config_portal_start() {
     config_server->on("/save", HTTP_POST, config_handle_save);
     config_server->onNotFound(config_handle_redirect);  // Captive portal catch-all
     config_server->begin();
+
+    // Publish a stable .local name so users don't need to remember the AP IP.
+    // Captive portal still works via DNSServer for clients without mDNS.
+    if (firewall_state.mdns_enabled) {
+        mdns_service::start_ap_config("rtnode");
+    }
 
     config_portal_active = true;
 
@@ -807,6 +874,8 @@ void config_portal_stop() {
         config_dns = nullptr;
     }
 
+    mdns_service::stop();
+
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_MODE_NULL);
     config_portal_active = false;
@@ -824,5 +893,5 @@ bool config_portal_is_active() {
     return config_portal_active;
 }
 
-#endif // BOUNDARY_MODE
-#endif // BOUNDARY_CONFIG_H
+#endif // FIREWALL_MODE
+#endif // FIREWALL_CONFIG_H

@@ -1,4 +1,4 @@
-// Copyright (C) 2026, Boundary Mode Extension
+// Copyright (C) 2026, Firewall Mode Extension
 // Based on microReticulum_Firmware by Mark Qvist
 //
 // TcpInterface — An RNS InterfaceImpl that bridges a WiFi TCP
@@ -14,7 +14,7 @@
 #define TCP_INTERFACE_H
 
 #ifdef HAS_RNS
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 
 #include <WiFi.h>
 #include <lwip/sockets.h>   // SO_LINGER — force RST to free lwIP PCBs immediately
@@ -24,7 +24,7 @@
 
 // ─── TCP Interface Configuration ─────────────────────────────────────────────
 #define TCP_IF_DEFAULT_PORT      4242
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 #define TCP_IF_MAX_CLIENTS       8
 #else
 #define TCP_IF_MAX_CLIENTS       4
@@ -484,6 +484,6 @@ private:
     int         _last_rx_client_idx = -1;  // v1.0.10: echo prevention — tracks which client is currently delivering an inbound frame
 };
 
-#endif // BOUNDARY_MODE
+#endif // FIREWALL_MODE
 #endif // HAS_RNS
 #endif // TCP_INTERFACE_H
