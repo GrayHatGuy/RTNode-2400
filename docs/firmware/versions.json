@@ -1,9 +1,21 @@
 [
   {
+    "tag": "v1.0.32",
+    "name": "v1.0.32 \u2014 LED off, mDNS/Firewall Mode, TCP keepalive fix",
+    "prerelease": false,
+    "published_at": "2026-05-09T01:21:56Z",
+    "assets": [
+      "rtnode_heltec_v3.bin",
+      "rtnode_heltec_v3_merged.bin",
+      "rtnode_heltec_v4.bin",
+      "rtnode_heltec_v4_merged.bin"
+    ]
+  },
+  {
     "tag": "v1.0.31",
     "name": "v1.0.31 \u2014 Fix LoRa routing: all interfaces MODE_GATEWAY",
     "prerelease": false,
-    "published_at": "2026-05-08T18:43:00Z",
+    "published_at": "2026-05-08T22:46:31Z",
     "assets": [
       "rtnode_heltec_v3.bin",
       "rtnode_heltec_v3_merged.bin",
