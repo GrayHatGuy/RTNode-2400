@@ -943,47 +943,21 @@ void draw_disp_area() {
       // 1px separator after SF line
       disp_area.drawLine(0, 34, disp_area.width()-1, 34, SSD1306_WHITE);
 
-      // When mDNS is enabled show three tighter rows: hostname, IP, port.
-      // When disabled keep the original two-row layout (IP, port, separator).
-      if (firewall_state.mdns_enabled) {
-        // Row 1: mDNS hostname (resolved at draw time)
-        uint8_t mac[6];
-        WiFi.macAddress(mac);
-        char suffix[5];
-        snprintf(suffix, sizeof(suffix), "%02x%02x", mac[4], mac[5]);
-        char host[33];
-        mdns_service::resolve_hostname(firewall_state.mdns_hostname, suffix,
-                                      host, sizeof(host));
-        disp_area.setCursor(2, 42);
-        disp_area.printf("%s.local", host);
-
-        // Row 2: WiFi IP
-        disp_area.setCursor(2, 52);
-        if (firewall_state.wifi_connected) {
-          disp_area.print(wr_device_ip);
-        } else {
-          disp_area.print("No WiFi");
-        }
-
-        // Row 3: Local TCP server port (shown only when enabled)
-        disp_area.setCursor(2, 62);
-        if (firewall_state.ap_tcp_enabled) {
-          disp_area.printf("Port:%u", firewall_state.ap_tcp_port);
-        }
+      // IP address
+      disp_area.setCursor(2, 44);
+      if (firewall_state.wifi_connected) {
+        disp_area.print(wr_device_ip);
       } else {
-        // Original two-row layout — IP, port, separator.
-        disp_area.setCursor(2, 44);
-        if (firewall_state.wifi_connected) {
-          disp_area.print(wr_device_ip);
-        } else {
-          disp_area.print("No WiFi");
-        }
-        disp_area.setCursor(2, 55);
-        if (firewall_state.ap_tcp_enabled) {
-          disp_area.printf("Port:%u", firewall_state.ap_tcp_port);
-        }
-        disp_area.drawLine(0, 60, disp_area.width()-1, 60, SSD1306_WHITE);
+        disp_area.print("No WiFi");
       }
+
+      // Local TCP server port (shown only when enabled)
+      disp_area.setCursor(2, 55);
+      if (firewall_state.ap_tcp_enabled) {
+        disp_area.printf("Port:%u", firewall_state.ap_tcp_port);
+      }
+
+      disp_area.drawLine(0, 60, disp_area.width()-1, 60, SSD1306_WHITE);
 #else
       if (radio_online && display_diagnostics) {
 #ifdef HAS_RNS

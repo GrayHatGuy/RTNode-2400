@@ -383,6 +383,11 @@ void setup() {
   #if HAS_NP == false
     pinMode(pin_led_rx, OUTPUT);
     pinMode(pin_led_tx, OUTPUT);
+    #ifdef FIREWALL_MODE
+      // Keep the LED off in Firewall Mode — the OLED is the status indicator.
+      digitalWrite(pin_led_rx, LOW);
+      digitalWrite(pin_led_tx, LOW);
+    #endif
   #endif
 
   #if HAS_TCXO == true
@@ -496,8 +501,9 @@ void setup() {
     }
   #endif
 
-  // LED solid on at boot for V3/V4 boards (with or without display)
-  #if BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3
+  // LED solid on at boot for V3/V4 boards (with or without display).
+  // In FIREWALL_MODE the OLED is the status indicator — keep the LED off.
+  #if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3) && !defined(FIREWALL_MODE)
     headless_led_solid();
   #endif
 
@@ -2516,11 +2522,11 @@ void loop() {
     if (wifi_is_connected()) {
       if (tcp_interface_ptr && !tcp_interface_ptr->isStarted()) {
         tcp_interface_ptr->start();
-        Serial.println("[Boundary] WiFi connected, TCP backbone started");
+        Serial.println("[Firewall] WiFi connected, TCP backbone started");
       }
       if (local_tcp_interface_ptr && !local_tcp_interface_ptr->isStarted()) {
         local_tcp_interface_ptr->start();
-        Serial.println("[Boundary] WiFi connected, local TCP server started");
+        Serial.println("[Firewall] WiFi connected, local TCP server started");
       }
     }
     if (tcp_interface_ptr) {
@@ -2614,8 +2620,9 @@ void loop() {
     if (disp_ready && !display_updating) update_display();
   #endif
 
-  // LED solid when operational on V3/V4 boards (yield to fast blink during white screen)
-  #if BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3
+  // LED solid when operational on V3/V4 boards (yield to fast blink during white screen).
+  // In FIREWALL_MODE the OLED is the status indicator — keep the LED off.
+  #if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3) && !defined(FIREWALL_MODE)
     if (radio_online && !display_lock_white) {
       headless_led_solid();
     }

@@ -318,10 +318,17 @@ extern RNS::Reticulum reticulum;
 			void led_id_on()  { }
 			void led_id_off() { }
 	#elif BOARD_MODEL == BOARD_HELTEC32_V4
+		#ifdef FIREWALL_MODE
+			void led_rx_on()  { }
+			void led_rx_off() { }
+			void led_tx_on()  { }
+			void led_tx_off() { }
+		#else
 			void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
 			void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
 			void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
 			void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+		#endif
 			void led_id_on()  { }
 			void led_id_off() { }
 	#elif BOARD_MODEL == BOARD_LORA32_V2_1
