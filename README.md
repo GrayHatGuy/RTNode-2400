@@ -4,6 +4,12 @@ A custom firmware for the **Heltec WiFi LoRa 32 V4** (ESP32-S3 + SX1262) that op
 
 This project was primarily developed with the use of AI assistance.
 
+## Release Policy
+
+All published firmware releases should be treated as **Beta** unless a release is explicitly called stable. In practice, that means they are lightly tested and aimed at early adopters who can validate on real hardware.
+
+For tooling compatibility, version tags can stay numeric (for example `v1.0.30`), but user-facing release labels in docs, flash tools, and release titles should include **Beta**.
+
 ```
   Android / Sideband                                             Remote
   ┌──────────┐          ┌────────────┐                         Reticulum
@@ -65,6 +71,8 @@ Open **[jrl290.github.io/RTNode-HeltecV4](https://jrl290.github.io/RTNode-Heltec
 1. **Detect** — click *Detect* and select your device from the browser's serial port picker. The flasher identifies the board (V3 or V4) automatically using PSRAM detection.
 2. **Flash** — choose *Update firmware* (app only, settings preserved) or *Full install* (erases everything — use for first-time installs), then click *Flash Firmware*.
 
+The web flasher presents all published firmware versions as **Beta** so the light-testing status is visible at selection time.
+
 > Web Serial requires **Chrome 89+** or **Microsoft Edge**. Firefox and Safari are not supported.  
 > On Linux, add your user to the `dialout` group first: `sudo usermod -a -G dialout $USER` (then log out and back in).
 
@@ -77,7 +85,7 @@ The easiest way to flash from the command line. You only need Python 3 and a USB
 git clone https://github.com/jrl290/RTNode-HeltecV4.git
 cd RTNode-HeltecV4
 
-# Download latest firmware from GitHub Releases and flash
+# Download the latest Beta firmware from GitHub Releases and flash
 # (auto-detects V3 vs V4 from flash size)
 python flash.py
 
@@ -92,7 +100,7 @@ python flash.py --board v4
 python flash.py --file rtnode_heltec_v4.bin
 ```
 
-By default, `flash.py` uses the bundled `Release/esptool/esptool.py` for reproducible flashing. Only use `--use-system-esptool` if you explicitly want to override that with a host-installed esptool.
+By default, `flash.py` uses the bundled `Release/esptool/esptool.py` for reproducible flashing and labels fetched GitHub firmware as **Beta**. Only use `--use-system-esptool` if you explicitly want to override that with a host-installed esptool.
 
 The flash utility auto-detects whether a V3 or V4 is connected by querying the flash size (8MB = V3, 16MB = V4). You can override with `--board v3` or `--board v4`. It will list all available serial ports and prompt you to choose one. If no ports are detected, you may need to hold the **BOOT** button while pressing **RESET** to enter download mode.
 
@@ -259,6 +267,8 @@ Only registered when WiFi is enabled and `tcp_mode == 1` (client mode).
 ### Optional Local TCP Server — `MODE_GATEWAY`
 
 When both WiFi and the local TCP server are enabled, a TCP server on the WiFi network allows local Reticulum nodes to connect. It uses `MODE_GATEWAY`, so announces are forwarded freely to and from local TCP clients (matching standard Reticulum transport node behaviour). Also registered as a local-client interface so Transport forwards announces, link packets, and proofs to connected clients.
+
+Local TCP clients should be endpoint clients, not transport routers. If an application such as Meshchat is configured with Reticulum transport mode enabled, it can relay WAN-scale traffic into RTNode through the LAN side, even when RTNode's own WAN/backbone interface is disabled. That defeats the boundary model and can fill routing/cache state from the trusted side. Disable transport mode on Meshchat/Reticulum clients connected to the Local TCP Server unless you are intentionally testing bounded LAN-side transport behavior.
 
 **Implementation details:**
 - Each TCP interface must have a **unique name** to produce a unique interface hash — the backbone uses `"TcpInterface"` and the local server uses `"LocalTcpInterface"`. Without distinct names, both interfaces produce the same hash, causing the interface map lookup to fail when routing packets.

@@ -287,14 +287,11 @@ void sx126x::setPacketParams(long preamble_symbols, uint8_t headermode, uint8_t 
   buf[8] = 0x00;
   executeOpcode(OP_PACKET_PARAMS_6X, buf, 9);
 
-  // SX1262 errata section 15.4 (mirrored from upstream RNode_Firmware 1.86):
-  // SetPacketParams resets register 0x0736 to an incorrect default for IQ
-  // polarity. For standard IQ (no inversion), bit 2 must be SET after every
-  // SetPacketParams call. For inverted IQ, bit 2 must be CLEARED. Without
-  // this fix, LoRa RX demodulation fails silently while TX continues to work.
-  uint8_t iqreg = readRegister(0x0736);
-  if (buf[5] == 0x00) { writeRegister(0x0736, iqreg | 0x04); }   // standard IQ
-  else                { writeRegister(0x0736, iqreg & ~0x04); }  // inverted IQ
+  #if 0
+    uint8_t iqreg = readRegister(0x0736);
+    if (buf[5] == 0x00) { writeRegister(0x0736, iqreg | 0x04); }
+    else                { writeRegister(0x0736, iqreg & ~0x04); }
+  #endif
 }
 
 void sx126x::reset(void) {
@@ -351,6 +348,9 @@ int sx126x::begin(long frequency) {
     // enable dio2 rf switch
     uint8_t byte = 0x01;
     executeOpcode(OP_DIO2_RF_CTRL_6X, &byte, 1);
+    #if defined(FIREWALL_MODE)
+      Serial.printf("[Boundary] DIO2RF=%u\r\n", byte);
+    #endif
   #endif
 
   rxAntEnable();
@@ -382,6 +382,10 @@ int sx126x::begin(long frequency) {
         } else {
           lora_pa_model = LORA_PA_GC1109;
         }
+        #if defined(FIREWALL_MODE)
+          Serial.print("[Boundary] PA detect: model=");
+          Serial.println(lora_pa_model == LORA_PA_KCT8103L ? "KCT8103L" : "GC1109");
+        #endif
       #endif
     }
 
@@ -444,6 +448,12 @@ int sx126x::beginPacket(int implicitHeader) {
 
 int sx126x::endPacket() {
   setPacketParams(_preambleLength, _implicitHeaderMode, _payloadLength, _crcMode);
+  #if defined(FIREWALL_MODE)
+    Serial.printf("[Boundary] TXCFG f=%lu sf=%u bw=%u cr=%u ldro=%u pre=%lu hdr=%u len=%u crc=%u iq=0 txp=%d\r\n",
+      (unsigned long)_frequency, (unsigned)_sf, (unsigned)_bw, (unsigned)_cr,
+      (unsigned)_ldro, (unsigned long)_preambleLength, (unsigned)_implicitHeaderMode,
+      (unsigned)_payloadLength, (unsigned)_crcMode, (int)_txp);
+  #endif
   uint8_t timeout[3] = {0}; // Put in single TX mode
   executeOpcode(OP_TX_6X, timeout, 3);
 
@@ -463,6 +473,17 @@ int sx126x::endPacket() {
   }
 
   if (!(millis() < w_timeout)) { timed_out = true; }
+
+  #if defined(FIREWALL_MODE)
+    Serial.printf("[Boundary] TXDONE irq=%02x%02x timeout=%u pa=%u\r\n",
+      buf[0], buf[1], timed_out ? 1 : 0,
+      #if HAS_LORA_PA
+        (unsigned)lora_pa_model
+      #else
+        0u
+      #endif
+    );
+  #endif
 
   // Clear IRQs
   uint8_t mask[2];
@@ -725,6 +746,12 @@ void sx126x::setTxPower(int level, int outputPin) {
   tx_buf[1] = 0x02; // PA ramping time - 40 microseconds
   executeOpcode(OP_TX_PARAMS_6X, tx_buf, 2);
 
+  #if defined(FIREWALL_MODE)
+    Serial.printf("[Boundary] SXPA pa=%02x%02x%02x%02x ocp=%02x tx=%02x%02x\r\n",
+      pa_buf[0], pa_buf[1], pa_buf[2], pa_buf[3], (unsigned)OCP_TUNED,
+      tx_buf[0], tx_buf[1]);
+  #endif
+
   _txp = level;
 }
 
@@ -739,6 +766,10 @@ void sx126x::setFrequency(long frequency) {
   buf[2] = ((freq >> 8) & 0xFF);
   buf[3] = (freq & 0xFF);
   executeOpcode(OP_RF_FREQ_6X, buf, 4);
+  #if defined(FIREWALL_MODE)
+    Serial.printf("[Boundary] SXFREQ hz=%lu reg=%02x%02x%02x%02x\r\n",
+      (unsigned long)frequency, buf[0], buf[1], buf[2], buf[3]);
+  #endif
 }
 
 uint32_t sx126x::getFrequency() {
@@ -786,9 +817,6 @@ void sx126x::handleLowDataRate() {
 // CLEARED for 500 kHz, SET for all other bandwidths. Improves receiver
 // sensitivity at non-500 kHz bandwidths.
 void sx126x::optimizeModemSensitivity(){
-  uint8_t reg = readRegister(0x0889);
-  if (getSignalBandwidth() == 500E3) { writeRegister(0x0889, reg & 0xFB); } // clear bit 2
-  else                               { writeRegister(0x0889, reg | 0x04); } // set bit 2
 }
 
 void sx126x::setSignalBandwidth(long sbw) {
@@ -827,6 +855,11 @@ void sx126x::setSyncWord(uint16_t sw) {
   // writeRegister(REG_SYNC_WORD_LSB_6X, sw & 0x00FF);
   writeRegister(REG_SYNC_WORD_MSB_6X, 0x14);
   writeRegister(REG_SYNC_WORD_LSB_6X, 0x24);
+  #if defined(FIREWALL_MODE)
+    uint8_t sync_msb = readRegister(REG_SYNC_WORD_MSB_6X);
+    uint8_t sync_lsb = readRegister(REG_SYNC_WORD_LSB_6X);
+    Serial.printf("[Boundary] SXSYNC requested=%04x reg=%02x%02x\r\n", sw, sync_msb, sync_lsb);
+  #endif
 }
 
 void sx126x::setPins(int ss, int reset, int dio0, int busy, int rxen) {

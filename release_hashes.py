@@ -19,6 +19,8 @@ import os
 import json
 import hashlib
 
+RELEASE_STABILITY = "beta"
+
 major_version = None
 minor_version = None
 target_version = None
@@ -54,6 +56,7 @@ if os.path.isdir(pio_build_dir):
                     release_hashes[filename] = {
                         "hash": hashlib.sha256(file.read()).hexdigest(),
                         "version": target_version,
+                        "stability": RELEASE_STABILITY,
                         "env": env_name,
                     }
 

@@ -252,9 +252,11 @@ Packet Destination::announce(const Bytes& app_data, bool path_response, const In
 	}
 	else {
 		Bytes destination_hash = _object->_hash;
-		//p random_hash = Identity::get_random_hash()[0:5] << int(time.time()).to_bytes(5, "big")
-		// CBA TODO add in time to random hash
-		Bytes random_hash = Cryptography::random(Type::Identity::RANDOM_HASH_LENGTH/8);
+		Bytes random_hash = Cryptography::random(5);
+		uint64_t emitted = (uint64_t)OS::time();
+		for (int shift = 32; shift >= 0; shift -= 8) {
+			random_hash << (uint8_t)((emitted >> shift) & 0xFF);
+		}
 
 		Bytes new_app_data(app_data);
         if (new_app_data.empty() && !_object->_default_app_data.empty()) {

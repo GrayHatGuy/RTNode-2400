@@ -258,7 +258,13 @@ namespace RNS {
 		inline void sent(bool sent) { assert(_object); _object->_sent = sent; }
 		inline void sent_at(double sent_at) { assert(_object); _object->_sent_at = sent_at; }
 		inline void receipt(const PacketReceipt& receipt) { assert(_object); _object->_receipt = receipt; }
-		inline void hops(uint8_t hops) { assert(_object); _object->_hops = hops; }
+		inline void hops(uint8_t hops) {
+			assert(_object);
+			_object->_hops = hops;
+			if (_object->_raw.size() > 1) {
+				_object->_raw[1] = hops;
+			}
+		}
 		inline void cached(bool cached) { assert(_object); _object->_cached = cached; }
 		inline void transport_id(const Bytes& transport_id) { assert(_object); _object->_transport_id = transport_id; }
 		//CBA Following method is only used by Link to provide Resource access to decrypted resource advertisement. Consider a better way.

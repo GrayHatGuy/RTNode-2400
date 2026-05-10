@@ -5,7 +5,7 @@ RTNode-HeltecV4 Flash Utility
 Flash the RTNode-HeltecV4 transport node firmware to a Heltec WiFi LoRa 32 V3 or V4.
 No PlatformIO required — just Python 3 and a USB cable.
 
-By default, downloads the latest firmware from GitHub Releases (if newer than
+By default, downloads the latest Beta firmware from GitHub Releases (if newer than
 the local cache) and flashes the app partition only, preserving bootloader,
 partition table, NVS, and EEPROM settings. For reproducible flashing, the
 script prefers the bundled esptool in Release/ over any host-installed copy.
@@ -23,7 +23,7 @@ Usage:
     # Update firmware — V3
     python flash.py --board v3
 
-    # Flash a specific release version
+    # Flash a specific Beta release version
     python flash.py --release v1.0.12
 
     # Full flash with merged binary (overwrites everything)
@@ -55,6 +55,8 @@ import time
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 VERSION         = "1.0.18"
+RELEASE_CHANNEL = "Beta"
+RELEASE_NOTE    = "lightly tested unless explicitly marked stable"
 CHIP            = "esp32s3"
 FLASH_MODE      = "qio"    # Global default; overridden by board profile
 FLASH_FREQ      = "80m"
@@ -439,6 +441,8 @@ def find_esptool(prefer_system=False):
     pio_esptool = os.path.expanduser(
         "~/.platformio/packages/tool-esptoolpy/esptool.py"
     )
+    pio_python = os.path.expanduser("~/.platformio/penv/bin/python")
+    pio_python_cmd = pio_python if os.path.isfile(pio_python) and os.access(pio_python, os.X_OK) else sys.executable
 
     repo_candidates = []
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -454,7 +458,7 @@ def find_esptool(prefer_system=False):
         # Standalone binary — invoke directly, no Python interpreter prefix
         repo_candidates.append(([bundled_bin], f"bundled esptool binary: {bundled_bin}"))
     if has_pyserial and os.path.isfile(pio_esptool):
-        repo_candidates.append(([sys.executable, pio_esptool], f"PlatformIO esptool: {pio_esptool}"))
+        repo_candidates.append(([pio_python_cmd, pio_esptool], f"PlatformIO esptool: {pio_esptool}"))
 
     system_candidates = []
     if shutil.which("esptool.py"):
@@ -617,6 +621,12 @@ def _parse_version_tag(tag):
     return None
 
 
+def _format_release_label(tag=None):
+    if tag:
+        return f"{tag} ({RELEASE_CHANNEL})"
+    return f"latest {RELEASE_CHANNEL} release"
+
+
 def _fetch_release_info(tag=None):
     """Fetch release info from GitHub. If tag is None, fetches latest."""
     try:
@@ -665,7 +675,7 @@ def fetch_firmware(board_key, flash_size, release_tag=None):
     cache_meta     = _read_cache_meta()
 
     # 1. Fetch release info
-    label = f"release {release_tag}" if release_tag else "latest release"
+    label = _format_release_label(release_tag)
     print(f"Checking {label} from {GITHUB_REPO}...")
     release, err = _fetch_release_info(release_tag)
     if not release:
@@ -683,7 +693,7 @@ def fetch_firmware(board_key, flash_size, release_tag=None):
         cached_tag = cache_meta.get("tag")
         if cached_tag == remote_tag:
             if sha256_file(archive_path) == cache_meta.get("sha256"):
-                print(f"  Cached firmware archive is up-to-date: {remote_tag}")
+                print(f"  Cached firmware archive is up-to-date: {_format_release_label(remote_tag)}")
                 need_download = False
             else:
                 print(f"  Cache integrity mismatch — re-downloading")
@@ -691,11 +701,11 @@ def fetch_firmware(board_key, flash_size, release_tag=None):
             cached_ver = _parse_version_tag(cached_tag) if cached_tag else None
             remote_ver = _parse_version_tag(remote_tag)
             if cached_ver and remote_ver and remote_ver > cached_ver:
-                print(f"  Newer version available: {cached_tag} → {remote_tag}")
+                print(f"  Newer {RELEASE_CHANNEL} release available: {_format_release_label(cached_tag)} → {_format_release_label(remote_tag)}")
             elif cached_ver and remote_ver and remote_ver < cached_ver:
-                print(f"  Requested version {remote_tag} is older than cached {cached_tag}")
+                print(f"  Requested {_format_release_label(remote_tag)} is older than cached {_format_release_label(cached_tag)}")
             else:
-                print(f"  Version changed: {cached_tag} → {remote_tag}")
+                print(f"  Version changed: {_format_release_label(cached_tag)} → {_format_release_label(remote_tag)}")
 
     if need_download:
         # 3. Locate the archive asset (with per-board fallback for old releases)
@@ -712,7 +722,7 @@ def fetch_firmware(board_key, flash_size, release_tag=None):
         os.makedirs(_cache_dir(), exist_ok=True)
 
         if asset_url:
-            print(f"  Downloading {remote_tag} / {FIRMWARE_ARCHIVE}...")
+            print(f"  Downloading {_format_release_label(remote_tag)} / {FIRMWARE_ARCHIVE}...")
             try:
                 urlretrieve(asset_url, archive_path)
             except Exception as e:
@@ -736,7 +746,7 @@ def fetch_firmware(board_key, flash_size, release_tag=None):
         else:
             available = [a["name"] for a in release.get("assets", [])]
             return None, (
-                f"Neither '{FIRMWARE_ARCHIVE}' nor '{firmware_name}' found in release {remote_tag}.\n"
+                f"Neither '{FIRMWARE_ARCHIVE}' nor '{firmware_name}' found in {_format_release_label(remote_tag)}.\n"
                 f"  Available assets: {available}"
             )
 
@@ -1223,7 +1233,7 @@ Examples:
   python flash.py --board v3
       Download latest firmware and flash a V3 board.
   python flash.py --release v1.0.12
-      Flash a specific release tag.
+      Flash a specific Beta release tag.
   python flash.py --full
       Do a full flash with the merged binary.
   python flash.py --offline
@@ -1245,7 +1255,7 @@ Examples:
     parser.add_argument("--port", "-p", help="Serial port (auto-detected if omitted)")
     parser.add_argument("--baud", "-b", default=None, help="Baud rate (board-specific default)")
     parser.add_argument("--release", "-r", default=None, metavar="TAG",
-                        help="Flash a specific release version (e.g. v1.0.12)")
+                        help="Flash a specific Beta release version (e.g. v1.0.12)")
     parser.add_argument("--update", action="store_true",
                         help="Legacy alias for an app-only firmware update")
     parser.add_argument("--offline", action="store_true",
@@ -1288,7 +1298,7 @@ Examples:
         # Explicit board — keep the selected profile, but still probe the device
         # when a port is available so flash size can override stale profile data.
         _board = args.board
-        _early_port = args.port or find_serial_port()
+        _early_port = None if args.merge_only else (args.port or find_serial_port())
         if _early_port:
             print(f"Reading flash info from {_early_port}...")
             info, err = read_flash_info(_early_port, esptool_cmd)
@@ -1360,6 +1370,7 @@ Examples:
     print(f"  Variant:    {fv['firmware_bin']}")
     print(f"  Flash mode: {BOARD_FLASH_MODE().upper()}"
           + (" (override)" if _flash_mode_override else " (board default)"))
+    print(f"  GitHub releases: {RELEASE_CHANNEL} ({RELEASE_NOTE})")
 
     # Determine firmware file
     firmware_path = None
@@ -1434,7 +1445,7 @@ Examples:
             fw_path, tag_or_err = fetch_firmware(_board, FLASH_SIZE(), release_tag=args.release)
             if fw_path:
                 firmware_path = fw_path
-                print(f"\n  Release: {tag_or_err}")
+                print(f"\n  Release: {_format_release_label(tag_or_err)}")
             else:
                 print(f"\n  GitHub: {tag_or_err}")
                 print("  Falling back to local firmware...")

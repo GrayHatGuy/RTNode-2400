@@ -245,7 +245,8 @@ static void config_send_html() {
     html += F(
         "<h2>&#x1f4e1; Local TCP Server (optional)</h2>"
         "<p class='note'>Run a TCP server on the same WiFi network so local devices can connect. "
-        "Uses Gateway mode (forwards announces to and from local TCP clients).</p>"
+        "Uses Gateway mode (forwards announces to and from local TCP clients). "
+        "Connect endpoint clients only; disable Reticulum transport mode on Meshchat or other LAN clients.</p>"
         "<label>Local TCP Server</label>"
         "<select name='ap_tcp_en'>"
     );

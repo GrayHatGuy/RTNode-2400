@@ -1448,11 +1448,23 @@ int map_modem_output_to_target_power(int modem_output_dbm) {
 
 void setTXPower() {
 	if (radio_online) {
+		int requested_lora_txp = lora_txp;
 		int mapped_lora_txp = map_target_power_to_modem_output(lora_txp);
 		
 		#if HAS_LORA_PA
 			int real_lora_txp = map_modem_output_to_target_power(mapped_lora_txp);
 			lora_txp = real_lora_txp;
+		#endif
+
+		#if defined(FIREWALL_MODE) && (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3)
+			Serial.printf("[Boundary] TXP: requested=%d effective=%d modem=%d pa=%u\r\n",
+				requested_lora_txp, lora_txp, mapped_lora_txp,
+				#if HAS_LORA_PA
+					(unsigned)lora_pa_model
+				#else
+					0u
+				#endif
+			);
 		#endif
 
 		if (model == MODEL_11) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);

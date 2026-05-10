@@ -304,6 +304,7 @@
   <header>
     <h1><span>RT</span>Node Firmware Flasher</h1>
     <p>Flash RTNode firmware directly from your browser &mdash; no Python or tools required.</p>
+    <p><strong>Release track:</strong> All published firmware versions are labeled <strong>Beta</strong> and should be treated as lightly tested unless explicitly marked stable.</p>
   </header>
 
   <!-- Step 1: Detect -->
@@ -324,7 +325,7 @@
       <div class="version-row">
         <label for="version-select">Version</label>
         <select id="version-select">
-          <option value="latest">Latest (bundled)</option>
+          <option value="latest">Latest Beta (bundled)</option>
         </select>
       </div>
 
@@ -432,7 +433,17 @@
   // Older releases live under firmware/<tag>/ because GitHub's release-download
   // URLs do not expose CORS headers and so cannot be fetched from the browser.
   // Run docs/mirror_releases.py to refresh the mirror.
+  const RELEASE_CHANNEL = 'Beta';
   const versionAssets = new Map();
+
+  function formatReleaseLabel(tag, name, stability) {
+    const channel = stability ? String(stability) : RELEASE_CHANNEL;
+    const base = `${tag}${name && name !== tag ? ' — ' + name : ''}`;
+    if (base.toLowerCase().includes(channel.toLowerCase())) {
+      return base;
+    }
+    return `${base} (${channel})`;
+  }
 
   function getBinUrl(fw, isUpdate) {
     const name = isUpdate ? fw.updateName : fw.fullName;
@@ -457,7 +468,7 @@
         versionAssets.set(v.tag, new Set(v.assets || []));
         const opt = document.createElement('option');
         opt.value       = v.tag;
-        opt.textContent = `${v.tag}${v.name && v.name !== v.tag ? ' — ' + v.name : ''}`;
+        opt.textContent = formatReleaseLabel(v.tag, v.name, v.stability);
         versionSelect.appendChild(opt);
       }
     } catch (_) { /* manifest missing — latest (bundled) remains the only option */ }
@@ -618,14 +629,14 @@
       if (!assetAvailable(ver, assetName)) {
         const other = currentIsUpdate ? 'Full install' : 'Update firmware';
         throw new Error(
-          `Release ${ver} does not include ${assetName}. ` +
+          `${RELEASE_CHANNEL} release ${ver} does not include ${assetName}. ` +
           `Try the "${other}" mode, or pick a different version.`
         );
       }
       const binUrl = getBinUrl(fw, currentIsUpdate);
       const addr   = currentIsUpdate ? fw.updateAddr : fw.fullAddr;
 
-      log(`Version:  ${ver}`);
+      log(`Version:  ${ver === 'latest' ? `Latest bundled ${RELEASE_CHANNEL}` : `${ver} (${RELEASE_CHANNEL})`}`);
       log(`Mode:     ${currentIsUpdate ? 'Update (app only, settings preserved)' : 'Full install (erase all)'}`);
       log(`Firmware: ${binUrl}`);
       const resp = await fetch(binUrl);

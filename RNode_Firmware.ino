@@ -55,6 +55,7 @@ SPIClass SDSPI(HSPI);
 
 #if MCU_VARIANT == MCU_ESP32
   #include <esp_task_wdt.h>
+  #include <esp_heap_caps.h>
 #endif
 
 // WDT timeout
@@ -76,6 +77,8 @@ volatile uint16_t queued_bytes = 0;
 volatile uint16_t queue_cursor = 0;
 volatile uint16_t current_packet_start = 0;
 volatile bool serial_buffering = false;
+static uint8_t last_lora_phy_header = 0;
+static bool last_lora_phy_header_valid = false;
 #if HAS_BLUETOOTH || HAS_BLE == true
   bool bt_init_ran = false;
 #endif
@@ -90,9 +93,27 @@ volatile bool serial_buffering = false;
           size_t len;
           int rssi;
           int snr_raw;
+      uint8_t phy_header;
           uint8_t data[];
   } modem_packet_t;
   static xQueueHandle modem_packet_queue = NULL;
+
+  static modem_packet_t* modem_packet_alloc(size_t len) {
+    size_t allocation_size = sizeof(modem_packet_t) + len;
+    #if MCU_VARIANT == MCU_ESP32
+      if (ESP.getPsramSize() > 0) {
+        modem_packet_t *packet = (modem_packet_t*)heap_caps_malloc(allocation_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (packet) return packet;
+      }
+      return (modem_packet_t*)heap_caps_malloc(allocation_size, MALLOC_CAP_8BIT);
+    #else
+      return (modem_packet_t*)malloc(allocation_size);
+    #endif
+  }
+
+  static void modem_packet_free(modem_packet_t *packet) {
+    free(packet);
+  }
 #endif
 
 char sbuf[128];
@@ -124,12 +145,14 @@ public:
 	}
 protected:
 	virtual void handle_incoming(const RNS::Bytes& data) {
+    VERBOSEF("[LoRa] RX %u bytes", data.size());
     TRACEF("LoRaInterface.handle_incoming: (%u bytes) data: %s", data.size(), data.toHex().c_str());
     TRACE("LoRaInterface.handle_incoming: sending packet to rns...");
     InterfaceImpl::handle_incoming(data);
   }
 	virtual void send_outgoing(const RNS::Bytes& data) {
     // CBA NOTE header will be addded later by transmit function
+    VERBOSEF("[LoRa] TX %u bytes", data.size());
     TRACEF("LoRaInterface.send_outgoing: (%u bytes) data: %s", data.size(), data.toHex().c_str());
     TRACE("LoRaInterface.send_outgoing: adding packet to outgoing queue...");
     for (size_t i = 0; i < data.size(); i++) {
@@ -944,6 +967,7 @@ void setup() {
 */
       RNS::Destination destination(RNS::Transport::identity(), RNS::Type::Destination::IN, RNS::Type::Destination::SINGLE, "rnstransport", "local");
 
+#ifdef FIREWALL_MODE
       // Cache this node's destination hash in RTC memory so the captive-portal
       // config page can show it without needing RNS to be running.
       {
@@ -955,7 +979,6 @@ void setup() {
         rtc_node_hash_magic = NODE_HASH_RTC_MAGIC;
       }
 
-#ifdef FIREWALL_MODE
       // Initialise the Reticulum interface-discovery announcer. Per the
       // Reticulum manual (https://reticulum.network/manual/interfaces.html)
       // this announces this node and its parameters on the network so that
@@ -1032,6 +1055,13 @@ inline void kiss_write_packet() {
   // CBA RESERVE
   //RNS::Bytes data();
   RNS::Bytes data(512);
+#ifdef FIREWALL_MODE
+  if (last_lora_phy_header_valid && host_write_len > 2 && pbuf[1] > 16) {
+    VERBOSEF("[LoRa] RX raw-shift fix: prepend 0x%02x (hops byte was %u)",
+        last_lora_phy_header, (unsigned)pbuf[1]);
+    data << last_lora_phy_header;
+  }
+#endif
   for (uint16_t i = 0; i < host_write_len; i++) {
     #if MCU_VARIANT == MCU_NRF52
       portENTER_CRITICAL();
@@ -1043,6 +1073,7 @@ inline void kiss_write_packet() {
     data << byte;
   }
   lora_interface.handle_incoming(data);
+  last_lora_phy_header_valid = false;
 #endif
 
   serial_write(FEND);
@@ -1104,6 +1135,22 @@ void ISR_VECT receive_callback(int packet_size) {
     uint8_t header   = LoRa->read(); packet_size--;
     uint8_t sequence = packetSequence(header);
     bool    ready    = false;
+
+    #ifdef FIREWALL_MODE
+      // Some Reticulum LoRa peers transmit raw RNS frames without the
+      // RNode split/framing byte. If we strip the first byte in that case,
+      // the RNS header shifts left and packets unpack as nonsense hops and
+      // contexts. Non-split RNode framing uses a low nibble of 0; split
+      // RNode frames are full-size fragments. Raw RNS control/announce
+      // frames seen here have a non-zero low nibble and fit in one LoRa frame.
+      if ((header & 0x0F) != 0 && (packet_size + 1) < SINGLE_MTU) {
+        read_len = 0;
+        pbuf[read_len++] = header;
+        getPacketData(packet_size);
+        ready = true;
+      }
+      else
+    #endif
 
     if (isSplitPacket(header) && seq == SEQ_UNSET) {
       // This is the first part of a split
@@ -1195,7 +1242,7 @@ void ISR_VECT receive_callback(int packet_size) {
       #else
         // Allocate packet struct, but abort if there
         // is not enough memory available.
-        modem_packet_t *modem_packet = (modem_packet_t*)malloc(sizeof(modem_packet_t) + read_len);
+        modem_packet_t *modem_packet = modem_packet_alloc(read_len);
         if(!modem_packet) { memory_low = true; return; }
 
         // Get packet RSSI and SNR
@@ -1203,6 +1250,7 @@ void ISR_VECT receive_callback(int packet_size) {
           modem_packet->snr_raw = LoRa->packetSnrRaw();
           modem_packet->rssi = LoRa->packetRssi(modem_packet->snr_raw);
         #endif
+        modem_packet->phy_header = header;
 
         // Send packet to event queue, but free the
         // allocated memory again if the queue is
@@ -1210,7 +1258,7 @@ void ISR_VECT receive_callback(int packet_size) {
         modem_packet->len = read_len;
         memcpy(modem_packet->data, pbuf, read_len); read_len = 0;
         if (!modem_packet_queue || xQueueSendFromISR(modem_packet_queue, &modem_packet, NULL) != pdPASS) {
-            free(modem_packet);
+          modem_packet_free(modem_packet);
         }
       #endif
     }  
@@ -1448,6 +1496,7 @@ void update_airtime() {
 }
 
 void transmit(uint16_t size) {
+  VERBOSEF("[LoRa] TXSTART %u bytes", size);
   if (radio_online) {
     if (!promisc) {
       uint16_t  written = 0;
@@ -2276,6 +2325,9 @@ void validate_status() {
       hw_ready = true;
       eeprom_ok = true;
       device_init_done = true;
+      #if BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3
+        model = MODEL_C8;
+      #endif
       Serial.write("[Boundary] Provisioning check bypassed, modem installed\r\n");
 
       // Load LoRa config from EEPROM (written by config portal)
@@ -2291,8 +2343,16 @@ void validate_status() {
         lora_txp  = 28;
         Serial.write("[Boundary] No LoRa config in EEPROM, using defaults\r\n");
       }
+      // Always log the active channel config so tests/diagnostics can verify it
+      Serial.printf("[Boundary] LoRa: freq=%lu bw=%lu sf=%u cr=%u txp=%u\r\n",
+          (unsigned long)lora_freq, (unsigned long)lora_bw,
+          (unsigned)lora_sf, (unsigned)lora_cr, (unsigned)lora_txp);
 
       op_mode = MODE_TNC;
+      // In FIREWALL_MODE (US915) there are no duty-cycle regulations;
+      // disable interference avoidance so CSMA does not block TX due to
+      // ambient non-LoRa RF energy on the 914 MHz band.
+      avoid_interference = false;
       startRadio();
     } else {
       hw_ready = false;
@@ -2400,6 +2460,7 @@ void validate_status() {
   }
 #endif
 
+static uint32_t _tx_blocked_last_log = 0;
 void tx_queue_handler() {
   if (!airtime_lock && queue_height > 0) {
     if (csma_cw == -1) {
@@ -2409,7 +2470,15 @@ void tx_queue_handler() {
 
     if (difs_wait_start == -1) {                                                  // DIFS wait not yet started
       if (medium_free()) { difs_wait_start = millis(); return; }                  // Set DIFS wait start time
-      else               { return; } }                                            // Medium not yet free, continue waiting
+      else               {
+        uint32_t _now = millis();
+        if (_now - _tx_blocked_last_log >= 2000) {
+          _tx_blocked_last_log = _now;
+          VERBOSEF("[LoRa] TX BLOCKED: dcd=%d avoidint=%d interference=%d rssi=%d noise=%d",
+              (int)dcd, (int)avoid_interference, (int)interference_detected,
+              (int)current_rssi, (int)noise_floor);
+        }
+        return; } }                                                               // Medium not yet free, continue waiting
     
     else {                                                                        // We are waiting for DIFS or CW to pass
       if (!medium_free()) { difs_wait_start = -1; cw_wait_start = -1; return; }   // Medium became occupied while in DIFS wait, restart waiting when free again
@@ -2554,8 +2623,10 @@ void loop() {
         host_write_len = modem_packet->len;
         last_rssi      = modem_packet->rssi;
         last_snr_raw   = modem_packet->snr_raw;
+        last_lora_phy_header = modem_packet->phy_header;
+        last_lora_phy_header_valid = true;
         memcpy(&pbuf, modem_packet->data, modem_packet->len);
-        free(modem_packet);
+        modem_packet_free(modem_packet);
         modem_packet = NULL;
 
         kiss_indicate_stat_rssi();
@@ -2572,7 +2643,9 @@ void loop() {
       if(modem_packet_queue && xQueueReceive(modem_packet_queue, &modem_packet, 0) == pdTRUE && modem_packet) {
         memcpy(&pbuf, modem_packet->data, modem_packet->len);
         host_write_len = modem_packet->len;
-        free(modem_packet);
+        last_lora_phy_header = modem_packet->phy_header;
+        last_lora_phy_header_valid = true;
+        modem_packet_free(modem_packet);
         modem_packet = NULL;
 
         portENTER_CRITICAL();
