@@ -1,4 +1,4 @@
-// Copyright (C) 2026, Boundary Mode Extension
+// Copyright (C) 2026, Firewall Mode Extension
 // Based on microReticulum_Firmware by Mark Qvist
 //
 // TcpInterface — An RNS InterfaceImpl that bridges a WiFi TCP
@@ -14,17 +14,18 @@
 #define TCP_INTERFACE_H
 
 #ifdef HAS_RNS
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 
 #include <WiFi.h>
 #include <lwip/sockets.h>   // SO_LINGER — force RST to free lwIP PCBs immediately
+#include <netinet/tcp.h>    // TCP_KEEPIDLE / TCP_KEEPINTVL / TCP_KEEPCNT
 #include <Interface.h>
 #include <Transport.h>
 #include <Bytes.h>
 
 // ─── TCP Interface Configuration ─────────────────────────────────────────────
 #define TCP_IF_DEFAULT_PORT      4242
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 #define TCP_IF_MAX_CLIENTS       8
 #else
 #define TCP_IF_MAX_CLIENTS       4
@@ -182,7 +183,9 @@ public:
             }
         }
 
-        // Send keepalive (empty HDLC frames) to prevent read timeout on both sides
+        // Send keepalive (empty HDLC frames) to detect dead connections quickly.
+        // Checking the write result catches half-open connections (remote host
+        // disappeared without sending FIN) without waiting for the read timeout.
         if (_num_clients > 0) {
             uint32_t now = millis();
             if (now - _last_keepalive >= TCP_IF_KEEPALIVE_INTERVAL) {
@@ -190,11 +193,13 @@ public:
                 uint8_t ka[] = { HDLC_FLAG, HDLC_FLAG };
                 for (int i = 0; i < TCP_IF_MAX_CLIENTS; i++) {
                     if (_clients[i].active && _clients[i].client.connected()) {
-                        _clients[i].client.write(ka, 2);
+                        size_t written = _clients[i].client.write(ka, 2);
+                        if (written == 0) {
+                            _cleanup_client(i, "keepalive write failed");
+                        }
                     }
                 }
             }
-
         }
 
         // Process incoming data from all active clients
@@ -440,6 +445,20 @@ private:
         if (connected) {
             client.setNoDelay(true);
             client.setTimeout(TCP_IF_WRITE_TIMEOUT / 1000);
+            // Enable OS-level TCP keepalives so the kernel probes the connection
+            // after 10s idle, retrying every 5s up to 3 times (15s detection window).
+            // This catches half-open connections independently of our app-layer keepalive.
+            int fd = client.fd();
+            if (fd >= 0) {
+                int optval = 1;
+                setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+                int idle = 10;   // seconds idle before first probe
+                int intvl = 5;   // seconds between retries
+                int cnt = 3;     // retries before declaring dead
+                setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,  &idle,  sizeof(idle));
+                setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+                setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,   &cnt,   sizeof(cnt));
+            }
             _clients[0].client = client;
             _clients[0].active = true;
             _clients[0].in_frame = false;
@@ -484,6 +503,6 @@ private:
     int         _last_rx_client_idx = -1;  // v1.0.10: echo prevention — tracks which client is currently delivering an inbound frame
 };
 
-#endif // BOUNDARY_MODE
+#endif // FIREWALL_MODE
 #endif // HAS_RNS
 #endif // TCP_INTERFACE_H

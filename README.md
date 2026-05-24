@@ -13,6 +13,12 @@ The following devices are currently supported with Transport Node Boundary opera
   
 *This project was primarily developed with the use of AI assistance code was reviewed audited and implemented by human hands on kb*  
 
+## Release Policy
+
+All published firmware releases should be treated as **Beta** unless a release is explicitly called stable. In practice, that means they are lightly tested and aimed at early adopters who can validate on real hardware.
+
+For tooling compatibility, version tags can stay numeric (for example `v1.0.30`), but user-facing release labels in docs, flash tools, and release titles should include **Beta**.
+
 ```
   Android / Sideband                                             Remote
   ┌──────────┐          ┌────────────┐                         Reticulum
@@ -57,19 +63,6 @@ This firmware was designed for the **Heltec WiFi LoRa 32 V4** and expanded to ac
 | **WiFi**     | 2.4 GHz 802.11 b/g/n | 2.4 GHz 802.11 b/g/n | 2.4 GHz b/g/n Wi-Fi & Bluetooth 5.0 | 2.4GHz b/g/n Wi-Fi and Bluetooth 5.0/Bluetooth Mesh|
 | **USB**      | Native USB CDC | Native USB CDC |  Native USB CDC | Native USB CDC|
 
-<<<<<<< HEAD
-=======
-| Component | Heltec V3 | Heltec V4 |
-|-----------|-----------|----------|
-| **MCU** | ESP32-S3 (ESP32-S3FN8) | ESP32-S3 (ESP32-S3FH4R2) |
-| **Flash** | 8 MB | 16 MB |
-| **PSRAM** | None | 2 MB (QSPI) |
-| **Radio** | SX1262 | SX1262 + PA (see below) |
-| **TX Power** | Up to 22 dBm | Up to 28 dBm |
-| **Display** | SSD1306 OLED 128×64 | SSD1306 OLED 128×64 |
-| **WiFi** | 2.4 GHz 802.11 b/g/n | 2.4 GHz 802.11 b/g/n |
-| **USB** | Native USB CDC | Native USB CDC |
->>>>>>> upstream/main
 
 The Heltec V4 has two board revisions that use different front-end modules. The firmware auto-detects the FEM type at boot:
 
@@ -82,87 +75,85 @@ A single `rtnode_heltec_v4` binary runs correctly on both revisions.
 
 ## Quick Start
 
-<<<<<<< HEAD
 The following devices offer RTNode enhanced memory allocation and active portal OTA configuration features in addition to ports of the base [microReticulum](https://github.com/attermann/microReticulum) firmware.
 
 - lilygo-t3-s3-sx1280-pa-boundry
 - lilygo-t3-s3-sx1280-pa-boundry-local
 - lilygo-t3-s3-lr1121-pa-boundry
-- lilygo-t3-s3-lr1121-pa-boundry-local 
+- lilygo-t3-s3-lr1121-pa-boundry-local
 - heltec_V3_boundary
-- heltec_V3_boundary-local             
-- heltec_V4_boundary               
-- heltec_V4_boundary-local            
+- heltec_V3_boundary-local
+- heltec_V4_boundary
+- heltec_V4_boundary-local
 - seeed_xiao_esp32s3_lr1121_boundary
 - seeed_xiao_esp32s3_lr1121_boundary-local
 - seeed_xiao_esp32s3_sx1262_boundary
 - seeed_xiao_esp32s3_sx1262_boundary-local
-  
+
 ### Release options
 
 - See releases for available device bins for build an/or build/flash to suit using the enviroments available in platformio.ini
-- Release options are qualified as default, boundary, and boundary-local as follows:
-  
+- Release options are qualified as default, firewall, and firewall-local as follows:
+
 **Key differences:**
 
-- **Default:** *bare-bones microreticulum transport node port. No boundary mode, no PSRAM usage, no TLSF, uses no_ota.csv memalloc partition table to minimize app partition and maximize space for logging*
+- **Default:** *bare-bones microreticulum transport node port. No firewall mode, no PSRAM usage, no TLSF, uses no_ota.csv memalloc partition table to minimize app partition and maximize space for logging*
 
-- **boundary:** *Full production boundary node. Enables PSRAM usage and two layer segregated fit (TLSF) dynamic memalloc, default*csv partition table permits OTA flash for active portal config but requires two slots for app storage and remaining mem for logging.*
+- **firewall:** *Full production firewall node. Enables PSRAM usage and two layer segregated fit (TLSF) dynamic memalloc, default*csv partition table permits OTA flash for active portal config but requires two slots for app storage and remaining mem for logging.*
 
-- **boundary-local:** *Same as boundary mode config above without TLSF/allocator.*
-*Note: See **[Routing & Memory Customizations](https://github.com/GrayHatGuy/RTNode-HeltecV4/blob/main/README.md#routing--memory-customizations)** for more details on device memory and limitations of table logging.
+- **firewall-local:** *Same as firewall mode config above without TLSF/allocator.*
+*Note: See **[Routing & Memory Customizations](https://github.com/GrayHatGuy/RTNode-2400/blob/main/README.md#routing--memory-customizations)** for more details on device memory and limitations of table logging.
 
-The table below is provides details on the RTNode devices with boundary enhancements:
+The table below is provides details on the RTNode devices with firewall enhancements (build environment names retain the legacy `boundary` suffix):
 
-| variant type | default | boundary | boundary-local |	
+| variant type | default | firewall | firewall-local |
 |-------------------|-----------------------|-----------------------|-----------------------|
 | Environment | heltec_wifi_lora_32_V4 | heltec_V4_boundary | heltec_V4_boundary-local |
 | Partitions | no_ota.csv | default_16MB.csv |	default_16MB.csv |
 | Flash/PSRAM mode | default |	qio/qio_qspi | qio/qio_qspi |
 | BOARD_HAS_PSRAM |	no | yes | yes |
-| BOUNDARY_MODE	| no | yes | yes |
+| FIREWALL_MODE	| no | yes | yes |
 | RNS_USE_TLSF	| no | yes | no |
 | RNS_USE_ALLOCATOR	| no | yes | no |
 
-| variant type | default | boundary | boundary-local |	
+| variant type | default | firewall | firewall-local |
 |-------------------|-----------------------|-----------------------|-----------------------|
 | Environment | heltec_wifi_lora_32_V3 | heltec_V3_boundary | heltec_V3_boundary-local |
 | Partitions | no_ota.csv | default_8MB.csv |	default_8MB.csv |
 | Flash/PSRAM mode | default |	qio/qio_qspi | qio/qio_qspi |
 | BOARD_HAS_PSRAM |	no | yes | yes |
-| BOUNDARY_MODE	| no | yes | yes |
+| FIREWALL_MODE	| no | yes | yes |
 | RNS_USE_TLSF	| no | yes | no |
 | RNS_USE_ALLOCATOR	| no | yes | no |
 
-| variant type | default | boundary | boundary-local |
+| variant type | default | firewall | firewall-local |
 |-------------------|-----------------------|-----------------------|-----------------------|
 | Environment | seeed_xiao_esp32s3 | xiao_esp32s3_boundary | xiao_esp32s3_boundary-local |
 | Partitions | no_ota.csv | default_16MB.csv |	default_16MB.csv |
 | Flash/PSRAM mode | default |	qio/qio_qspi | qio/qio_qspi |
 | BOARD_HAS_PSRAM |	no | yes | yes |
-| BOUNDARY_MODE	| no | yes | yes |
+| FIREWALL_MODE	| no | yes | yes |
 | RNS_USE_TLSF	| no | yes | no |
 | RNS_USE_ALLOCATOR	| no | yes | no |
 
-| variant type | default | boundary | boundary-local |	
+| variant type | default | firewall | firewall-local |
 |-------------------|-----------------------|-----------------------|-----------------------|
 | Environment | t3s3_sx1280_pa & t3s3_lr1121_pa | t3s3_sx1280_pa_boundary & t3s3_lr1121_pa_boundary | t3s3_sx1280_pa_boundary-local & t3s3_lr1121_pa_boundary-local |
 | Partitions | no_ota.csv | partitions_4mb_ota.csv | partitions_4mb_ota.csv |
 | Flash/PSRAM mode | default |	qio/qio_qspi | qio/qio_qspi |
 | BOARD_HAS_PSRAM |	no | yes | yes |
-| BOUNDARY_MODE	| no | yes | yes |
+| FIREWALL_MODE	| no | yes | yes |
 | RNS_USE_TLSF	| no | yes | no |
 | RNS_USE_ALLOCATOR	| no | yes | no |
 
-### Option A: Easy Flash (no PlatformIO required)
-=======
 ### Option A: Web Flasher (easiest — no tools required)
->>>>>>> upstream/main
 
 Open **[jrl290.github.io/RTNode-HeltecV4](https://jrl290.github.io/RTNode-HeltecV4/)** in Chrome or Edge, connect your RTNode via USB, and follow the two-step flow:
 
 1. **Detect** — click *Detect* and select your device from the browser's serial port picker. The flasher identifies the board (V3 or V4) automatically using PSRAM detection.
 2. **Flash** — choose *Update firmware* (app only, settings preserved) or *Full install* (erases everything — use for first-time installs), then click *Flash Firmware*.
+
+The web flasher presents all published firmware versions as **Beta** so the light-testing status is visible at selection time.
 
 > Web Serial requires **Chrome 89+** or **Microsoft Edge**. Firefox and Safari are not supported.  
 > On Linux, add your user to the `dialout` group first: `sudo usermod -a -G dialout $USER` (then log out and back in).
@@ -176,7 +167,7 @@ The easiest way to flash from the command line. You only need Python 3 and a USB
 git clone https://github.com/jrl290/RTNode-HeltecV4.git
 cd RTNode-HeltecV4
 
-# Download latest firmware from GitHub Releases and flash
+# Download the latest Beta firmware from GitHub Releases and flash
 # (auto-detects V3 vs V4 from flash size)
 python flash.py
 
@@ -191,17 +182,12 @@ python flash.py --board v4
 python flash.py --file rtnode_heltec_v4.bin
 ```
 
-By default, `flash.py` uses the bundled `Release/esptool/esptool.py` for reproducible flashing. Only use `--use-system-esptool` if you explicitly want to override that with a host-installed esptool.
+By default, `flash.py` uses the bundled `Release/esptool/esptool.py` for reproducible flashing and labels fetched GitHub firmware as **Beta**. Only use `--use-system-esptool` if you explicitly want to override that with a host-installed esptool.
 
 The flash utility auto-detects whether a V3 or V4 is connected by querying the flash size (8MB = V3, 16MB = V4). You can override with `--board v3` or `--board v4`. It will list all available serial ports and prompt you to choose one. If no ports are detected, you may need to hold the **BOOT** button while pressing **RESET** to enter download mode.
 
-<<<<<<< HEAD
-### Option B: Build from Source (PlatformIO)
-*Note: At present only Boundry mode and environments in [Quick Start](https://github.com/GrayHatGuy/RTNode-HeltecV4/blob/main/README.md#quick-start) are supported.
-=======
 ### Option C: Build from Source (PlatformIO)
-
->>>>>>> upstream/main
+*Note: At present only Firewall mode and environments in [Quick Start](https://github.com/GrayHatGuy/RTNode-2400/blob/main/README.md#quick-start) are supported.
 For development or customization:
 
 ```bash
@@ -223,12 +209,8 @@ pio run -e seeed_xiao_esp32s3_boundary
 pio run -e lilygo-t3-s3-sx1280-pa-boundary
 
 # Flash (via PlatformIO)
-<<<<<<< HEAD
 # update environment to reflect device type
 pio run -e heltec_V4_boundary -t upload
-=======
-pio run -e rtnode_heltec_v4 -t upload
->>>>>>> upstream/main
 
 # Or create a merged binary and flash with the utility
 python flash.py --merge-only    # creates merged firmware bin
@@ -358,36 +340,28 @@ The 128×64 OLED is split into two panels:
 
 The firmware runs up to **three RNS interfaces** simultaneously, using different interface modes to control announce propagation and routing behavior:
 
-### LoRa Interface — `MODE_FULL`
+### LoRa Interface — `MODE_GATEWAY`
 
-<<<<<<< HEAD
-The LoRa radio operates in **Access Point mode**. In Reticulum, this means:
-- The interface broadcasts its own announces but **blocks rebroadcast of remote announces** from crossing to LoRa
-- This prevents backbone announces (hundreds of remote destinations) from flooding the limited-bandwidth LoRa channel
-- Local nodes discover the transport node directly; the transport node answers path requests for remote destinations from its cache
-*Note: Only boundary mode has been verified on Xiao esp32s3 and Lilygo T3S3*
-=======
-The LoRa radio operates in **Full mode**. In Reticulum, this means:
-- Announces propagate freely in both directions — LoRa nodes learn about local TCP clients and backbone destinations, and vice versa
-- Backbone announce flooding on the low-bandwidth LoRa channel is controlled by the BOUNDARY firewall (see TCP Backbone Interface below), not by interface mode
-- All LoRa ↔ local TCP and LoRa ↔ backbone routing works without manual path requests
->>>>>>> upstream/main
+Always uses `MODE_GATEWAY`. Announce broadcasts propagate freely in both directions, allowing the relay to forward announces between LoRa nodes and ensuring Transport's own path-probe packets are transmitted. Backbone announce flooding on the low-bandwidth LoRa channel is controlled by the `MODE_FIREWALL` policy on the TCP Backbone Interface (see below), not by interface mode.
+
+*Note: Only firewall mode has been verified on Xiao esp32s3 and Lilygo T3S3.*
 
 ### TCP Backbone Interface — `MODE_BOUNDARY`
 
 The TCP backbone connection uses `MODE_BOUNDARY` (`0x20`), a custom transport mode adapted for the memory-constrained ESP32 environment. In this mode:
 - Incoming announces from the backbone are received and cached, but **not stored in the path table by default** — only stored when specifically requested via a path request from a local LoRa node
-- This prevents the path table (limited to 48 entries on ESP32) from being overwhelmed by thousands of backbone destinations
+- This prevents the path table (limited to **24 entries** on ESP32) from being overwhelmed by thousands of backbone destinations
 - When the path table needs to be culled, **backbone-learned paths are evicted first**, preserving locally-needed LoRa paths
+
+Only registered when WiFi is enabled and `tcp_mode == 1` (client mode).
 
 ### Optional Local TCP Server — `MODE_GATEWAY`
 
-<<<<<<< HEAD
-If enabled, a TCP server on the WiFi network allows local Reticulum nodes to connect. It also uses Access Point mode, with the same announce filtering as LoRa.
-*Note: Only boundary mode has been verified on Xiao esp32s3 and Lilygo T3S3*
-=======
-If enabled, a TCP server on the WiFi network allows local Reticulum nodes to connect. It uses Gateway mode, so announces are forwarded to and from local TCP clients freely (matching standard Reticulum transport node behaviour).
->>>>>>> upstream/main
+When both WiFi and the local TCP server are enabled, a TCP server on the WiFi network allows local Reticulum nodes to connect. It uses `MODE_GATEWAY`, so announces are forwarded freely to and from local TCP clients (matching standard Reticulum transport node behaviour). Also registered as a local-client interface so Transport forwards announces, link packets, and proofs to connected clients.
+
+Local TCP clients should be endpoint clients, not transport routers. If an application such as Meshchat is configured with Reticulum transport mode enabled, it can relay WAN-scale traffic into RTNode through the LAN side, even when RTNode's own WAN/backbone interface is disabled. That defeats the firewall model and can fill routing/cache state from the trusted side. Disable transport mode on Meshchat/Reticulum clients connected to the Local TCP Server unless you are intentionally testing bounded LAN-side transport behavior.
+
+*Note: Only firewall mode has been verified on Xiao esp32s3 and Lilygo T3S3.*
 
 **Implementation details:**
 - Each TCP interface must have a **unique name** to produce a unique interface hash — the backbone uses `"TcpInterface"` and the local server uses `"LocalTcpInterface"`. Without distinct names, both interfaces produce the same hash, causing the interface map lookup to fail when routing packets.
@@ -419,7 +393,7 @@ The ESP32-S3 has limited RAM compared to a desktop Reticulum node. Several custo
 
 | Table | Default (Desktop) | RTNode-HeltecV4 | Rationale |
 |-------|-------------------|-----------|-----------|
-| Path table (`_destination_table`) | Unbounded | **48 entries** | Prevents unbounded growth; backbone-learned paths evicted first |
+| Path table (`_destination_table`) | Unbounded | **24 entries** | Prevents unbounded growth; backbone-learned paths evicted first |
 | Hash list (`_hashlist`) | 1,000,000 | **32** | Packet dedup list; small is fine for low-throughput LoRa |
 | Path request tags (`_max_pr_tags`) | 32,000 | **32** | Pending path requests rarely exceed a few dozen |
 | Known destinations | 100 | **24** | Identity cache; rarely need more on a transport node |
@@ -524,8 +498,8 @@ Set the transport node's **Local TCP Server** to **Enabled** (port 4242).
 | File | Purpose |
 |------|---------|
 | `RNode_Firmware.ino` | Main firmware — transport mode initialization, interface setup, button handling |
-| `BoundaryMode.h` | Transport node state struct, EEPROM load/save, configuration defaults |
-| `BoundaryConfig.h` | Web-based captive portal for configuration |
+| `FirewallMode.h` | Transport node state struct, EEPROM load/save, configuration defaults |
+| `FirewallConfig.h` | Web-based captive portal for configuration |
 | `TcpInterface.h` | TCP interface for both backbone and local server (implements `RNS::InterfaceImpl`) with HDLC framing, unique naming, and 10 Mbps bitrate |
 | `Display.h` | OLED display layout — transport node status page |
 | `flash.py` | Python CLI flash utility — list serial ports, download from GitHub, merge & flash firmware |
@@ -546,7 +520,14 @@ The firmware depends on [microReticulum](https://github.com/attermann/microRetic
 
 ### Memory Usage 
 
-<<<<<<< HEAD
+**Upstream summary (Heltec V4):**
+
+| Resource | Used | Available |
+|----------|------|----------|
+| RAM | ~21.2% | 320 KB |
+| Flash | ~19.3% | 16 MB |
+| PSRAM | Dynamic | 2 MB |
+
 **xiao_esp32s3**
 ```
 rnode_firmware_xiao_esp32s3.elf                                       
@@ -558,13 +539,6 @@ Memory region         Used Size  Region Size  %age Used
     rtc_iram_seg:          33 B       8176 B      0.40%
     rtc_data_seg:          44 B       8176 B      0.54%
     rtc_slow_seg:          16 B         8 KB      0.20%
-=======
-| Resource | Used | Available |
-|----------|------|----------|
-| RAM | ~21.2% | 320 KB |
-| Flash | ~19.3% | 16 MB |
-| PSRAM | Dynamic | 2 MB |
->>>>>>> upstream/main
 
 RAM:   [===       ]  28.7% (used 94084 bytes from 327680 bytes)
 Flash: [========  ]  83.2% (used 1743845 bytes from 2097152 bytes)

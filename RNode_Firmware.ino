@@ -27,15 +27,16 @@
 #include <SPI.h>
 #include "Utilities.h"
 
-// CBA Boundary Mode
-// NOTE: Boundary Mode is the legacy name. This firmware branch intends to
-// converge on a single Transport Mode, with the BOUNDARY_MODE symbol kept
+// CBA Firewall Mode
+// NOTE: FIREWALL_MODE is the compile flag for Firewall Mode.
+// This is the only operating mode in this fork.
 // temporarily as a compatibility shim during cleanup.
-#ifdef BOUNDARY_MODE
-#include "BoundaryMode.h"
+#ifdef FIREWALL_MODE
+#include "FirewallMode.h"
 #include "TcpInterface.h"
-#include "BoundaryConfig.h"
+#include "FirewallConfig.h"
 #include "Advertise.h"
+#include "MdnsService.h"
 #include "esp_bt.h"
 #endif
 
@@ -54,6 +55,7 @@ SPIClass SDSPI(HSPI);
 
 #if MCU_VARIANT == MCU_ESP32
   #include <esp_task_wdt.h>
+  #include <esp_heap_caps.h>
 #endif
 
 // WDT timeout
@@ -75,6 +77,8 @@ volatile uint16_t queued_bytes = 0;
 volatile uint16_t queue_cursor = 0;
 volatile uint16_t current_packet_start = 0;
 volatile bool serial_buffering = false;
+static uint8_t last_lora_phy_header = 0;
+static bool last_lora_phy_header_valid = false;
 #if HAS_BLUETOOTH || HAS_BLE == true
   bool bt_init_ran = false;
 #endif
@@ -89,9 +93,27 @@ volatile bool serial_buffering = false;
           size_t len;
           int rssi;
           int snr_raw;
+      uint8_t phy_header;
           uint8_t data[];
   } modem_packet_t;
   static xQueueHandle modem_packet_queue = NULL;
+
+  static modem_packet_t* modem_packet_alloc(size_t len) {
+    size_t allocation_size = sizeof(modem_packet_t) + len;
+    #if MCU_VARIANT == MCU_ESP32
+      if (ESP.getPsramSize() > 0) {
+        modem_packet_t *packet = (modem_packet_t*)heap_caps_malloc(allocation_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (packet) return packet;
+      }
+      return (modem_packet_t*)heap_caps_malloc(allocation_size, MALLOC_CAP_8BIT);
+    #else
+      return (modem_packet_t*)malloc(allocation_size);
+    #endif
+  }
+
+  static void modem_packet_free(modem_packet_t *packet) {
+    free(packet);
+  }
 #endif
 
 char sbuf[128];
@@ -123,12 +145,14 @@ public:
 	}
 protected:
 	virtual void handle_incoming(const RNS::Bytes& data) {
+    VERBOSEF("[LoRa] RX %u bytes", data.size());
     TRACEF("LoRaInterface.handle_incoming: (%u bytes) data: %s", data.size(), data.toHex().c_str());
     TRACE("LoRaInterface.handle_incoming: sending packet to rns...");
     InterfaceImpl::handle_incoming(data);
   }
 	virtual void send_outgoing(const RNS::Bytes& data) {
     // CBA NOTE header will be addded later by transmit function
+    VERBOSEF("[LoRa] TX %u bytes", data.size());
     TRACEF("LoRaInterface.send_outgoing: (%u bytes) data: %s", data.size(), data.toHex().c_str());
     TRACE("LoRaInterface.send_outgoing: adding packet to outgoing queue...");
     for (size_t i = 0; i < data.size(); i++) {
@@ -246,12 +270,12 @@ RNS::Reticulum reticulum(RNS::Type::NONE);
 RNS::Interface lora_interface(RNS::Type::NONE);
 RNS::FileSystem filesystem(RNS::Type::NONE);
 
-#ifdef BOUNDARY_MODE
-// Boundary mode: TCP backbone interface + state
-BoundaryState boundary_state = {};
+#ifdef FIREWALL_MODE
+// Firewall mode: TCP backbone interface + state
+FirewallState firewall_state = {};
 RNS::Interface tcp_rns_interface(RNS::Type::NONE);
 TcpInterface*  tcp_interface_ptr = nullptr;
-// Local TCP server (MODE_ACCESS_POINT, doesn't forward announces)
+// Local TCP server
 RNS::Interface local_tcp_rns_interface(RNS::Type::NONE);
 TcpInterface*  local_tcp_interface_ptr = nullptr;
 // RTC memory flag — survives software reset but not power cycle
@@ -392,6 +416,11 @@ void setup() {
   #if HAS_NP == false
     pinMode(pin_led_rx, OUTPUT);
     pinMode(pin_led_tx, OUTPUT);
+    #ifdef FIREWALL_MODE
+      // Keep the LED off in Firewall Mode — the OLED is the status indicator.
+      digitalWrite(pin_led_rx, LOW);
+      digitalWrite(pin_led_tx, LOW);
+    #endif
   #endif
 
   #if HAS_TCXO == true
@@ -505,19 +534,20 @@ void setup() {
     }
   #endif
 
-  // LED solid on at boot for V3/V4 boards (with or without display)
-  #if BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3
+  // LED solid on at boot for V3/V4 boards (with or without display).
+  // In FIREWALL_MODE the OLED is the status indicator — keep the LED off.
+  #if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3) && !defined(FIREWALL_MODE)
     headless_led_solid();
   #endif
 
-  // ── Boundary Mode: check if config portal is needed ──
-  #ifdef BOUNDARY_MODE
+  // ── Firewall Mode: check if config portal is needed ──
+  #ifdef FIREWALL_MODE
   {
     // Load LoRa config from EEPROM so the portal can show current values
     eeprom_conf_load();
 
     // Load boundary config so the portal can show current/default values
-    boundary_load_config();
+    firewall_load_config();
 
     // ── Bootloop detection ───────────────────────────────────────────────
     // Track rapid reboots in RTC memory. If the device reboots more than
@@ -546,7 +576,7 @@ void setup() {
 
     // Enter config mode if: first boot with no config, OR button-triggered reboot,
     // OR bootloop detected
-    bool app_marker_missing = !boundary_app_marker_valid();
+    bool app_marker_missing = !firewall_app_marker_valid();
     bool need_config = boundary_needs_config();
     bool config_requested = (boundary_config_request == BOUNDARY_CONFIG_MAGIC);
     bool skip_config = (boundary_skip_config == BOUNDARY_SKIP_MAGIC);
@@ -623,16 +653,16 @@ void setup() {
     #endif
 
     #if HAS_BLUETOOTH || HAS_BLE == true
-      #ifndef BOUNDARY_MODE
+      #ifndef FIREWALL_MODE
         bt_init();
         bt_init_ran = true;
       #else
-        // Boundary mode: release BT controller memory (~70KB)
+        // Firewall mode: release BT controller memory (~70KB)
         btStop();
         esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
       #endif
     #else
-      #ifdef BOUNDARY_MODE
+      #ifdef FIREWALL_MODE
         // Even when BLE/BT are compile-time disabled (e.g. V3 boundary),
         // the ESP32 BT controller is still loaded. Release its ~70KB of RAM.
         btStop();
@@ -641,7 +671,7 @@ void setup() {
       #endif
     #endif
 
-    #ifdef BOUNDARY_MODE
+    #ifdef FIREWALL_MODE
       // Initialize bt_devname for WiFi hostname when BT is disabled
       #if HAS_BLUETOOTH || HAS_BLE == true
       if (!bt_init_ran)
@@ -815,36 +845,38 @@ void setup() {
 
       HEAD("Registering LoRA Interface...", RNS::LOG_TRACE);
       lora_interface = new LoRaInterface();
-      lora_interface.mode(RNS::Type::Interface::MODE_ACCESS_POINT);
       RNS::Transport::register_interface(lora_interface);
 
-#ifdef BOUNDARY_MODE
-      // ── Boundary Mode: Load config and optionally set up WiFi + TCP ──
-      HEAD("Boundary Mode: Initializing...", RNS::LOG_TRACE);
+#ifdef FIREWALL_MODE
+      // ── Firewall Mode: Load config and optionally set up WiFi + TCP ──
+      HEAD("Firewall Mode: Initializing...", RNS::LOG_TRACE);
 
       // ESP32 has only ~324KB heap. Each path entry with random_blobs costs
       // ~200-500 bytes. Keep tables small to avoid heap exhaustion.
       // cull_path_table() evicts backbone paths first, preserving local ones.
       RNS::Transport::path_table_maxsize(24);
       RNS::Transport::path_table_maxpersist(12);
-      boundary_load_config();
+      firewall_load_config();
 
       // Set up IFAC on the LoRa interface if configured
-      if (boundary_state.ifac_enabled &&
-          (boundary_state.ifac_netname[0] != '\0' || boundary_state.ifac_passphrase[0] != '\0')) {
+      if (firewall_state.ifac_enabled &&
+          (firewall_state.ifac_netname[0] != '\0' || firewall_state.ifac_passphrase[0] != '\0')) {
         HEAD("Setting up IFAC on LoRa interface...", RNS::LOG_TRACE);
-        lora_interface.setup_ifac(boundary_state.ifac_netname, boundary_state.ifac_passphrase);
+        lora_interface.setup_ifac(firewall_state.ifac_netname, firewall_state.ifac_passphrase);
         {
           char _ifac_msg[96];
           snprintf(_ifac_msg, sizeof(_ifac_msg), "IFAC configured: netname=%s, passphrase=%s",
-                   boundary_state.ifac_netname[0] ? boundary_state.ifac_netname : "(none)",
-                   boundary_state.ifac_passphrase[0] ? "***" : "(none)");
+                   firewall_state.ifac_netname[0] ? firewall_state.ifac_netname : "(none)",
+                   firewall_state.ifac_passphrase[0] ? "***" : "(none)");
           HEAD(_ifac_msg, RNS::LOG_TRACE);
         }
       }
 
+      // All interfaces use GATEWAY — allows announce forwarding in all modes
+      lora_interface.mode(RNS::Type::Interface::MODE_GATEWAY);
+
       // Start WiFi if enabled
-      if (boundary_state.wifi_enabled) {
+      if (firewall_state.wifi_enabled) {
         if (!wifi_initialized) {
           if (wifi_mode != WR_WIFI_STA && wifi_mode != WR_WIFI_AP) {
             wifi_mode = WR_WIFI_STA;
@@ -854,16 +886,16 @@ void setup() {
           wifi_remote_init();
         }
       } else {
-        HEAD("Boundary Mode: WiFi DISABLED (LoRa-only repeater)", RNS::LOG_TRACE);
+        HEAD("Firewall Mode: WiFi DISABLED (LoRa-only repeater)", RNS::LOG_TRACE);
       }
 
       // Register TCP backbone interface if enabled (mode 1 = client)
-      if (boundary_state.wifi_enabled && boundary_state.tcp_mode == 1) {
+      if (firewall_state.wifi_enabled && firewall_state.tcp_mode == 1) {
         tcp_interface_ptr = new TcpInterface(
             TCP_IF_MODE_CLIENT,
-            boundary_state.tcp_port,
-            boundary_state.backbone_host,
-            boundary_state.backbone_port
+            firewall_state.tcp_port,
+            firewall_state.backbone_host,
+            firewall_state.backbone_port
         );
         tcp_rns_interface = tcp_interface_ptr;
         tcp_rns_interface.mode(RNS::Type::Interface::MODE_BOUNDARY);
@@ -873,22 +905,18 @@ void setup() {
         {
           char _bm_msg[128];
           snprintf(_bm_msg, sizeof(_bm_msg), "TCP backbone: client -> %s:%d",
-                   boundary_state.backbone_host, boundary_state.backbone_port);
+                   firewall_state.backbone_host, firewall_state.backbone_port);
           HEAD(_bm_msg, RNS::LOG_TRACE);
         }
-      } else if (boundary_state.tcp_mode == 0) {
-        HEAD("Boundary Mode: TCP backbone DISABLED", RNS::LOG_TRACE);
+      } else if (firewall_state.tcp_mode == 0) {
+        HEAD("Firewall Mode: TCP backbone DISABLED", RNS::LOG_TRACE);
       }
 
       // Register local TCP server if enabled
-      // MODE_GATEWAY allows announce rebroadcasts so local TCP clients
-      // can discover each other and receive backbone announces.
-      // (MODE_ACCESS_POINT blocks all announce broadcasts in outbound(),
-      //  which prevented local clients from finding paths to each other.)
-      if (boundary_state.wifi_enabled && boundary_state.ap_tcp_enabled) {
+      if (firewall_state.wifi_enabled && firewall_state.ap_tcp_enabled) {
         local_tcp_interface_ptr = new TcpInterface(
             TCP_IF_MODE_SERVER,
-            boundary_state.ap_tcp_port,
+            firewall_state.ap_tcp_port,
             "",  // no target host for server mode
             0,
             "LocalTcpInterface"
@@ -906,7 +934,7 @@ void setup() {
         {
           char _bm_msg[128];
           snprintf(_bm_msg, sizeof(_bm_msg), "Local TCP server: port %d (GATEWAY mode)",
-                   boundary_state.ap_tcp_port);
+                   firewall_state.ap_tcp_port);
           HEAD(_bm_msg, RNS::LOG_TRACE);
         }
       }
@@ -919,8 +947,8 @@ void setup() {
 
       HEAD("Creating Reticulum instance...", RNS::LOG_TRACE);
       reticulum = RNS::Reticulum();
-#ifdef BOUNDARY_MODE
-      // In boundary mode, transport is ALWAYS enabled
+#ifdef FIREWALL_MODE
+      // In firewall mode, transport is ALWAYS enabled
       reticulum.transport_enabled(true);
 #else
       reticulum.transport_enabled(op_mode == MODE_TNC);
@@ -928,19 +956,23 @@ void setup() {
       reticulum.probe_destination_enabled(true);
       reticulum.start();
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
       // Start TCP interfaces after Reticulum is running
-      if (boundary_state.wifi_enabled && (wifi_is_connected() || wifi_mode == WR_WIFI_AP)) {
+      if (firewall_state.wifi_enabled && (wifi_is_connected() || wifi_mode == WR_WIFI_AP)) {
         if (tcp_interface_ptr) {
           tcp_interface_ptr->start();
-          HEAD("Boundary Mode: TCP backbone started", RNS::LOG_TRACE);
+          HEAD("Firewall Mode: TCP backbone started", RNS::LOG_TRACE);
         }
         if (local_tcp_interface_ptr) {
           local_tcp_interface_ptr->start();
-          HEAD("Boundary Mode: Local TCP server started", RNS::LOG_TRACE);
+          HEAD("Firewall Mode: Local TCP server started", RNS::LOG_TRACE);
         }
-      } else if (boundary_state.wifi_enabled) {
-        HEAD("Boundary Mode: Waiting for WiFi before starting TCP interfaces", RNS::LOG_WARNING);
+        if (wifi_is_connected() && firewall_state.mdns_enabled) {
+          uint16_t advert_port = firewall_state.ap_tcp_enabled ? firewall_state.ap_tcp_port : 0;
+          mdns_service::start_sta_auto(firewall_state.mdns_hostname, advert_port);
+        }
+      } else if (firewall_state.wifi_enabled) {
+        HEAD("Firewall Mode: Waiting for WiFi before starting TCP interfaces", RNS::LOG_WARNING);
       }
 #endif
 
@@ -963,6 +995,7 @@ void setup() {
 */
       RNS::Destination destination(RNS::Transport::identity(), RNS::Type::Destination::IN, RNS::Type::Destination::SINGLE, "rnstransport", "local");
 
+#ifdef FIREWALL_MODE
       // Cache this node's destination hash in RTC memory so the captive-portal
       // config page can show it without needing RNS to be running.
       #ifdef BOUNDARY_MODE
@@ -976,7 +1009,6 @@ void setup() {
       }
       #endif // BOUNDARY_MODE
 
-#ifdef BOUNDARY_MODE
       // Initialise the Reticulum interface-discovery announcer. Per the
       // Reticulum manual (https://reticulum.network/manual/interfaces.html)
       // this announces this node and its parameters on the network so that
@@ -987,25 +1019,25 @@ void setup() {
 #endif
 
       HEAD("RNS is READY!", RNS::LOG_TRACE);
-#ifdef BOUNDARY_MODE
-      HEAD("*** BOUNDARY MODE ACTIVE ***", RNS::LOG_TRACE);
-      HEAD("RNS transport mode is ENABLED (boundary)", RNS::LOG_TRACE);
-      HEAD("LoRa Interface: MODE_ACCESS_POINT", RNS::LOG_TRACE);
+#ifdef FIREWALL_MODE
+      HEAD("*** FIREWALL MODE ACTIVE ***", RNS::LOG_TRACE);
+      HEAD("RNS transport is ENABLED (firewall mode active)", RNS::LOG_TRACE);
+      HEAD("LoRa Interface: MODE_GATEWAY", RNS::LOG_TRACE);
       {
         char _bm_info[128];
-        if (boundary_state.tcp_mode == 1) {
+        if (firewall_state.tcp_mode == 1) {
           snprintf(_bm_info, sizeof(_bm_info), "TCP Backbone: client -> %s:%d",
-                   boundary_state.backbone_host, boundary_state.backbone_port);
+                   firewall_state.backbone_host, firewall_state.backbone_port);
           HEAD(_bm_info, RNS::LOG_TRACE);
         } else {
           HEAD("TCP Backbone: DISABLED", RNS::LOG_TRACE);
         }
-        if (boundary_state.ap_tcp_enabled) {
-          snprintf(_bm_info, sizeof(_bm_info), "Local TCP Server: port %d (MODE_ACCESS_POINT)",
-                   boundary_state.ap_tcp_port);
+        if (firewall_state.ap_tcp_enabled) {
+          snprintf(_bm_info, sizeof(_bm_info), "Local TCP Server: port %d (MODE_GATEWAY)",
+                   firewall_state.ap_tcp_port);
           HEAD(_bm_info, RNS::LOG_TRACE);
         }
-        if (!boundary_state.wifi_enabled) {
+        if (!firewall_state.wifi_enabled) {
           HEAD("WiFi: DISABLED (LoRa-only repeater)", RNS::LOG_TRACE);
         }
       }
@@ -1053,6 +1085,13 @@ inline void kiss_write_packet() {
   // CBA RESERVE
   //RNS::Bytes data();
   RNS::Bytes data(512);
+#ifdef FIREWALL_MODE
+  if (last_lora_phy_header_valid && host_write_len > 2 && pbuf[1] > 16) {
+    VERBOSEF("[LoRa] RX raw-shift fix: prepend 0x%02x (hops byte was %u)",
+        last_lora_phy_header, (unsigned)pbuf[1]);
+    data << last_lora_phy_header;
+  }
+#endif
   for (uint16_t i = 0; i < host_write_len; i++) {
     #if MCU_VARIANT == MCU_NRF52
       portENTER_CRITICAL();
@@ -1064,6 +1103,7 @@ inline void kiss_write_packet() {
     data << byte;
   }
   lora_interface.handle_incoming(data);
+  last_lora_phy_header_valid = false;
 #endif
 
   serial_write(FEND);
@@ -1125,6 +1165,22 @@ void ISR_VECT receive_callback(int packet_size) {
     uint8_t header   = LoRa->read(); packet_size--;
     uint8_t sequence = packetSequence(header);
     bool    ready    = false;
+
+    #ifdef FIREWALL_MODE
+      // Some Reticulum LoRa peers transmit raw RNS frames without the
+      // RNode split/framing byte. If we strip the first byte in that case,
+      // the RNS header shifts left and packets unpack as nonsense hops and
+      // contexts. Non-split RNode framing uses a low nibble of 0; split
+      // RNode frames are full-size fragments. Raw RNS control/announce
+      // frames seen here have a non-zero low nibble and fit in one LoRa frame.
+      if ((header & 0x0F) != 0 && (packet_size + 1) < SINGLE_MTU) {
+        read_len = 0;
+        pbuf[read_len++] = header;
+        getPacketData(packet_size);
+        ready = true;
+      }
+      else
+    #endif
 
     if (isSplitPacket(header) && seq == SEQ_UNSET) {
       // This is the first part of a split
@@ -1216,7 +1272,7 @@ void ISR_VECT receive_callback(int packet_size) {
       #else
         // Allocate packet struct, but abort if there
         // is not enough memory available.
-        modem_packet_t *modem_packet = (modem_packet_t*)malloc(sizeof(modem_packet_t) + read_len);
+        modem_packet_t *modem_packet = modem_packet_alloc(read_len);
         if(!modem_packet) { memory_low = true; return; }
 
         // Get packet RSSI and SNR
@@ -1224,6 +1280,7 @@ void ISR_VECT receive_callback(int packet_size) {
           modem_packet->snr_raw = LoRa->packetSnrRaw();
           modem_packet->rssi = LoRa->packetRssi(modem_packet->snr_raw);
         #endif
+        modem_packet->phy_header = header;
 
         // Send packet to event queue, but free the
         // allocated memory again if the queue is
@@ -1231,7 +1288,7 @@ void ISR_VECT receive_callback(int packet_size) {
         modem_packet->len = read_len;
         memcpy(modem_packet->data, pbuf, read_len); read_len = 0;
         if (!modem_packet_queue || xQueueSendFromISR(modem_packet_queue, &modem_packet, NULL) != pdPASS) {
-            free(modem_packet);
+          modem_packet_free(modem_packet);
         }
       #endif
     }  
@@ -1469,6 +1526,7 @@ void update_airtime() {
 }
 
 void transmit(uint16_t size) {
+  VERBOSEF("[LoRa] TXSTART %u bytes", size);
   if (radio_online) {
     if (!promisc) {
       uint16_t  written = 0;
@@ -1800,8 +1858,8 @@ void serial_callback(uint8_t sbyte) {
       eeprom_conf_save();
     } else if (command == CMD_CONF_DELETE) {
       eeprom_conf_delete();
-      #ifdef BOUNDARY_MODE
-        boundary_clear_app_marker();
+      #ifdef FIREWALL_MODE
+        firewall_clear_app_marker();
       #endif
     } else if (command == CMD_FB_EXT) {
       #if HAS_DISPLAY == true
@@ -2289,14 +2347,17 @@ void validate_status() {
   }
 
   if (boot_vector == START_FROM_BOOTLOADER || boot_vector == START_FROM_POWERON) {
-#ifdef BOUNDARY_MODE
-    // Boundary Mode: bypass EEPROM provisioning checks.
+#ifdef FIREWALL_MODE
+    // Firewall Mode: bypass EEPROM provisioning checks.
     // We don't need rnodeconf provisioning — LoRa config comes from
     // the web portal / EEPROM config area instead.
     if (modem_installed) {
       hw_ready = true;
       eeprom_ok = true;
       device_init_done = true;
+      #if BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3
+        model = MODEL_C8;
+      #endif
       Serial.write("[Boundary] Provisioning check bypassed, modem installed\r\n");
 
       // Load LoRa config from EEPROM (written by config portal)
@@ -2320,8 +2381,16 @@ void validate_status() {
         #endif
         Serial.write("[Boundary] No LoRa config in EEPROM, using defaults\r\n");
       }
+      // Always log the active channel config so tests/diagnostics can verify it
+      Serial.printf("[Boundary] LoRa: freq=%lu bw=%lu sf=%u cr=%u txp=%u\r\n",
+          (unsigned long)lora_freq, (unsigned long)lora_bw,
+          (unsigned)lora_sf, (unsigned)lora_cr, (unsigned)lora_txp);
 
       op_mode = MODE_TNC;
+      // In FIREWALL_MODE (US915) there are no duty-cycle regulations;
+      // disable interference avoidance so CSMA does not block TX due to
+      // ambient non-LoRa RF energy on the 914 MHz band.
+      avoid_interference = false;
       startRadio();
     } else {
       hw_ready = false;
@@ -2394,7 +2463,7 @@ void validate_status() {
         }
       #endif
     }
-#endif // BOUNDARY_MODE
+#endif // FIREWALL_MODE
   } else {
     hw_ready = false;
     Serial.write("Error, incorrect boot vector\r\n");
@@ -2429,6 +2498,7 @@ void validate_status() {
   }
 #endif
 
+static uint32_t _tx_blocked_last_log = 0;
 void tx_queue_handler() {
   if (!airtime_lock && queue_height > 0) {
     if (csma_cw == -1) {
@@ -2438,7 +2508,15 @@ void tx_queue_handler() {
 
     if (difs_wait_start == -1) {                                                  // DIFS wait not yet started
       if (medium_free()) { difs_wait_start = millis(); return; }                  // Set DIFS wait start time
-      else               { return; } }                                            // Medium not yet free, continue waiting
+      else               {
+        uint32_t _now = millis();
+        if (_now - _tx_blocked_last_log >= 2000) {
+          _tx_blocked_last_log = _now;
+          VERBOSEF("[LoRa] TX BLOCKED: dcd=%d avoidint=%d interference=%d rssi=%d noise=%d",
+              (int)dcd, (int)avoid_interference, (int)interference_detected,
+              (int)current_rssi, (int)noise_floor);
+        }
+        return; } }                                                               // Medium not yet free, continue waiting
     
     else {                                                                        // We are waiting for DIFS or CW to pass
       if (!medium_free()) { difs_wait_start = -1; cw_wait_start = -1; return; }   // Medium became occupied while in DIFS wait, restart waiting when free again
@@ -2470,7 +2548,7 @@ void loop() {
 	  reticulum.loop();
   }
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
   // Periodic interface-discovery announcer (Reticulum manual §Interfaces).
   // No-op until Reticulum is up and the user has enabled "Advertise Device".
   if (reticulum) {
@@ -2478,7 +2556,7 @@ void loop() {
   }
 #endif
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
   // ── Clear bootloop counter once we reach a stable loop iteration ──────────
   if (bootloop_magic == BOOTLOOP_MAGIC) {
     bootloop_magic = 0;
@@ -2532,8 +2610,8 @@ void loop() {
         Serial.printf("[WATCHDOG] WiFi.status()=%d heap=%u\r\n",
                       (int)WiFi.status(), ESP.getFreeHeap());
         Serial.printf("[WATCHDOG] Bridged: L→T=%lu T→L=%lu\r\n",
-                      boundary_state.packets_bridged_lora_to_tcp,
-                      boundary_state.packets_bridged_tcp_to_lora);
+                      firewall_state.packets_bridged_lora_to_tcp,
+                      firewall_state.packets_bridged_tcp_to_lora);
         Serial.flush();
         delay(100);
         ESP.restart();
@@ -2545,17 +2623,17 @@ void loop() {
     }
   }
 
-  // Boundary Mode: poll TCP interfaces for incoming data
-  if (boundary_state.wifi_enabled) {
+  // Firewall Mode: poll TCP interfaces for incoming data
+  if (firewall_state.wifi_enabled) {
     // Start TCP interfaces if WiFi just connected and not yet started
     if (wifi_is_connected()) {
       if (tcp_interface_ptr && !tcp_interface_ptr->isStarted()) {
         tcp_interface_ptr->start();
-        Serial.println("[Boundary] WiFi connected, TCP backbone started");
+        Serial.println("[Firewall] WiFi connected, TCP backbone started");
       }
       if (local_tcp_interface_ptr && !local_tcp_interface_ptr->isStarted()) {
         local_tcp_interface_ptr->start();
-        Serial.println("[Boundary] WiFi connected, local TCP server started");
+        Serial.println("[Firewall] WiFi connected, local TCP server started");
       }
     }
     if (tcp_interface_ptr) {
@@ -2564,9 +2642,9 @@ void loop() {
     if (local_tcp_interface_ptr) {
       local_tcp_interface_ptr->loop();
     }
-    boundary_state.tcp_connected    = (tcp_interface_ptr && tcp_interface_ptr->isConnected());
-    boundary_state.ap_tcp_connected  = (local_tcp_interface_ptr && local_tcp_interface_ptr->isConnected());
-    boundary_state.wifi_connected    = wifi_is_connected();
+    firewall_state.tcp_connected    = (tcp_interface_ptr && tcp_interface_ptr->isConnected());
+    firewall_state.ap_tcp_connected  = (local_tcp_interface_ptr && local_tcp_interface_ptr->isConnected());
+    firewall_state.wifi_connected    = wifi_is_connected();
   }
 
 #endif
@@ -2583,8 +2661,10 @@ void loop() {
         host_write_len = modem_packet->len;
         last_rssi      = modem_packet->rssi;
         last_snr_raw   = modem_packet->snr_raw;
+        last_lora_phy_header = modem_packet->phy_header;
+        last_lora_phy_header_valid = true;
         memcpy(&pbuf, modem_packet->data, modem_packet->len);
-        free(modem_packet);
+        modem_packet_free(modem_packet);
         modem_packet = NULL;
 
         kiss_indicate_stat_rssi();
@@ -2601,7 +2681,9 @@ void loop() {
       if(modem_packet_queue && xQueueReceive(modem_packet_queue, &modem_packet, 0) == pdTRUE && modem_packet) {
         memcpy(&pbuf, modem_packet->data, modem_packet->len);
         host_write_len = modem_packet->len;
-        free(modem_packet);
+        last_lora_phy_header = modem_packet->phy_header;
+        last_lora_phy_header_valid = true;
+        modem_packet_free(modem_packet);
         modem_packet = NULL;
 
         portENTER_CRITICAL();
@@ -2649,8 +2731,9 @@ void loop() {
     if (disp_ready && !display_updating) update_display();
   #endif
 
-  // LED solid when operational on V3/V4 boards (yield to fast blink during white screen)
-  #if BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3
+  // LED solid when operational on V3/V4 boards (yield to fast blink during white screen).
+  // In FIREWALL_MODE the OLED is the status indicator — keep the LED off.
+  #if (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3) && !defined(FIREWALL_MODE)
     if (radio_online && !display_lock_white) {
       headless_led_solid();
     }
@@ -2666,6 +2749,16 @@ void loop() {
 
   #if HAS_WIFI
     if (wifi_initialized) update_wifi();
+    #ifdef FIREWALL_MODE
+    // Late-start mDNS once WiFi finishes its asynchronous association.
+    // The function early-exits if already running or WiFi is not yet up,
+    // so calling it every loop iteration is cheap.
+    if (!mdns_service::is_running() && wifi_is_connected() &&
+        firewall_state.wifi_enabled && firewall_state.mdns_enabled) {
+      uint16_t advert_port = firewall_state.ap_tcp_enabled ? firewall_state.ap_tcp_port : 0;
+      mdns_service::start_sta_auto(firewall_state.mdns_hostname, advert_port);
+    }
+    #endif
   #endif
 
   #if HAS_INPUT
@@ -2751,8 +2844,8 @@ void button_event(uint8_t event, unsigned long duration) {
     if (display_blanked) {
       display_unblank();
     } else {
-      #ifdef BOUNDARY_MODE
-      // Boundary Mode button mapping:
+      #ifdef FIREWALL_MODE
+      // Firewall Mode button mapping:
       //   >5s  = reboot into config mode (clean restart)
       //   >700ms = sleep
       //   short = display unblank
@@ -2799,7 +2892,7 @@ void button_event(uint8_t event, unsigned long duration) {
         }
         #endif
       }
-      #endif // BOUNDARY_MODE
+      #endif // FIREWALL_MODE
     }
   #endif
 }

@@ -14,6 +14,10 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "Graphics.h"
+#ifdef FIREWALL_MODE
+#include "FirewallMode.h"
+#include "MdnsService.h"
+#endif
 #include <Adafruit_GFX.h>
 
 #if BOARD_MODEL != BOARD_TECHO
@@ -41,45 +45,7 @@
 
 #include "Fonts/Org_01.h"
 
-// Forward declaration for boundary mode display
-#ifdef BOUNDARY_MODE
-#ifndef BOUNDARY_STATE_DEFINED
-#define BOUNDARY_STATE_DEFINED
-struct BoundaryState {
-    bool     enabled;
-    bool     wifi_enabled;
-    uint8_t  tcp_mode;        // 0=disabled, 1=client
-    uint16_t tcp_port;
-    char     backbone_host[64];
-    uint16_t backbone_port;
-    bool     ap_tcp_enabled;
-    uint16_t ap_tcp_port;
-    char     ap_ssid[33];
-    char     ap_psk[33];
-    // IFAC settings for LoRa interface
-    bool     ifac_enabled;
-    char     ifac_netname[33];
-    char     ifac_passphrase[33];
-    // Device advertisement settings
-    bool     advert_enabled;
-    double   advert_lat;
-    double   advert_lon;
-    bool     advert_jitter;
-    char     node_name[33];   // Human-readable name (empty = auto from node hash)
-    // Airtime / duty-cycle limits as fraction (0.0 = disabled, 0.01 = 1%).
-    float    st_airtime_limit; // ~15 second rolling window
-    float    lt_airtime_limit; // ~1 hour rolling window
-    bool     wifi_connected;
-    bool     tcp_connected;       // Backbone (WAN) connected
-    bool     ap_tcp_connected;    // Local TCP server (LAN) has client
-    bool     ap_active;
-    uint32_t packets_bridged_lora_to_tcp;
-    uint32_t packets_bridged_tcp_to_lora;
-    uint32_t last_bridge_activity;
-};
-#endif // BOUNDARY_STATE_DEFINED
-extern BoundaryState boundary_state;
-#endif
+// FirewallState and MdnsService are pulled in via FirewallMode.h above.
 
 #define DISP_W 128
 #define DISP_H 64
@@ -813,8 +779,8 @@ void draw_waterfall(int px, int py) {
 bool stat_area_intialised = false;
 void draw_stat_area() {
   if (device_init_done) {
-#ifdef BOUNDARY_MODE
-    // ── Boundary Mode: 4 status indicators + battery ──
+#ifdef FIREWALL_MODE
+    // ── Firewall Mode: 4 status indicators + battery ──
     //  LORA / WIFI / WAN (backbone) / LAN (local TCP)
     stat_area.fillRect(0, 0, 64, 64, SSD1306_BLACK);
     stat_area.setFont(SMALL_FONT);
@@ -828,7 +794,7 @@ void draw_stat_area() {
     stat_area.print(radio_online ? "LORA" : "lora");
 
     // Row 2 — WIFI
-    if (!boundary_state.wifi_enabled) {
+    if (!firewall_state.wifi_enabled) {
       stat_area.drawCircle(4, 13, 3, SSD1306_WHITE);
       stat_area.setCursor(10, 16);
       stat_area.print("wifi");
@@ -843,11 +809,11 @@ void draw_stat_area() {
     }
 
     // Row 3 — WAN / backbone TCP
-    if (boundary_state.tcp_mode == 0) {
+    if (firewall_state.tcp_mode == 0) {
       stat_area.drawCircle(4, 23, 3, SSD1306_WHITE);
       stat_area.setCursor(10, 26);
       stat_area.print("wan");
-    } else if (boundary_state.tcp_connected) {
+    } else if (firewall_state.tcp_connected) {
       stat_area.fillCircle(4, 23, 3, SSD1306_WHITE);
       stat_area.setCursor(10, 26);
       stat_area.print("WAN");
@@ -858,8 +824,8 @@ void draw_stat_area() {
     }
 
     // Row 4 — LAN / local TCP server (hidden when disabled)
-    if (boundary_state.ap_tcp_enabled) {
-      if (boundary_state.ap_tcp_connected) {
+    if (firewall_state.ap_tcp_enabled) {
+      if (firewall_state.ap_tcp_connected) {
         stat_area.fillCircle(4, 33, 3, SSD1306_WHITE);
       } else {
         stat_area.drawCircle(4, 33, 3, SSD1306_WHITE);
@@ -945,8 +911,8 @@ void draw_disp_area() {
     if (firmware_update_mode) disp_area.drawBitmap(0, p_by, bm_fw_update, disp_area.width(), 27, SSD1306_WHITE, SSD1306_BLACK);
   } else {
     if (!disp_ext_fb or bt_ssp_pin != 0) {
-#ifdef BOUNDARY_MODE
-      // ── Boundary Mode display: compact status page ──
+#ifdef FIREWALL_MODE
+      // ── Firewall Mode display: compact status page ──
       disp_area.fillRect(0, 0, disp_area.width(), disp_area.height(), SSD1306_BLACK);
 
       // Title bar
@@ -956,8 +922,8 @@ void draw_disp_area() {
       disp_area.setTextColor(SSD1306_BLACK);
       disp_area.setTextSize(1);
       disp_area.setCursor(4, 7);
-      if (boundary_state.node_name[0] != '\0') {
-        disp_area.print(boundary_state.node_name);
+      if (firewall_state.node_name[0] != '\0') {
+        disp_area.print(firewall_state.node_name);
       } else {
         disp_area.print("RTNode");
       }
@@ -980,9 +946,9 @@ void draw_disp_area() {
       // 1px separator after SF line
       disp_area.drawLine(0, 34, disp_area.width()-1, 34, SSD1306_WHITE);
 
-      // WiFi IP address
+      // IP address
       disp_area.setCursor(2, 44);
-      if (boundary_state.wifi_connected) {
+      if (firewall_state.wifi_connected) {
         disp_area.print(wr_device_ip);
       } else {
         disp_area.print("No WiFi");
@@ -990,11 +956,10 @@ void draw_disp_area() {
 
       // Local TCP server port (shown only when enabled)
       disp_area.setCursor(2, 55);
-      if (boundary_state.ap_tcp_enabled) {
-        disp_area.printf("Port:%u", boundary_state.ap_tcp_port);
+      if (firewall_state.ap_tcp_enabled) {
+        disp_area.printf("Port:%u", firewall_state.ap_tcp_port);
       }
 
-      // 1px separator after Port line
       disp_area.drawLine(0, 60, disp_area.width()-1, 60, SSD1306_WHITE);
 #else
       if (radio_online && display_diagnostics) {
@@ -1165,7 +1130,7 @@ void draw_disp_area() {
           }
         }
       }
-#endif // BOUNDARY_MODE
+#endif // FIREWALL_MODE
     } else {
       disp_area.drawBitmap(0, 0, fb, disp_area.width(), disp_area.height(), SSD1306_WHITE, SSD1306_BLACK);
     }
@@ -1215,12 +1180,12 @@ bool epd_blanked = false;
   }
 #endif
 
-#ifdef BOUNDARY_MODE
+#ifdef FIREWALL_MODE
 extern bool display_lock_white;
 #endif
 
 void update_display(bool blank = false) {
-  #ifdef BOUNDARY_MODE
+  #ifdef FIREWALL_MODE
   if (display_lock_white) return;
   #endif
   display_updating = true;

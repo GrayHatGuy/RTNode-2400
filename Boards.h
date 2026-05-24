@@ -361,7 +361,7 @@
       #define HAS_DISPLAY true
       #define HAS_WIFI true
       #define HAS_BLUETOOTH false
-      #ifdef BOUNDARY_MODE
+      #ifdef FIREWALL_MODE
         #define HAS_BLE false
       #else
         #define HAS_BLE true
@@ -406,7 +406,7 @@
       #define IS_ESP32S3 true
       #define HAS_DISPLAY true
       #define HAS_BLUETOOTH false
-      #ifdef BOUNDARY_MODE
+      #ifdef FIREWALL_MODE
         #define HAS_BLE false
       #else
         #define HAS_BLE true

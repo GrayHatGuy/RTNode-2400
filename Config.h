@@ -72,7 +72,7 @@
     #endif
 
 	// MCU independent configuration parameters
-	#ifdef BOUNDARY_MODE
+	#ifdef FIREWALL_MODE
 	const long serial_baudrate  = 115200;
 	#else
 	const long serial_baudrate  = 115200;

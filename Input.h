@@ -84,7 +84,7 @@
     }
 
     // ── Live hold indicator: turn display white when held >5s ──
-    #ifdef BOUNDARY_MODE
+    #ifdef FIREWALL_MODE
     {
       if (button_state == PRESSED && button_down_last > 0) {
         unsigned long held = millis() - button_down_last;

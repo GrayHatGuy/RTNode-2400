@@ -321,10 +321,17 @@ extern RNS::Reticulum reticulum;
 			void led_id_on()  { }
 			void led_id_off() { }
 	#elif BOARD_MODEL == BOARD_HELTEC32_V4
+		#ifdef FIREWALL_MODE
+			void led_rx_on()  { }
+			void led_rx_off() { }
+			void led_tx_on()  { }
+			void led_tx_off() { }
+		#else
 			void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
 			void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
 			void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
 			void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+		#endif
 			void led_id_on()  { }
 			void led_id_off() { }
 	#elif BOARD_MODEL == BOARD_LORA32_V2_1
@@ -895,8 +902,8 @@ int8_t  led_standby_direction = 0;
 #endif
 
 void serial_write(uint8_t byte) {
-	#ifdef BOUNDARY_MODE
-		// No KISS serial output in boundary mode - serial is used for debug logging only
+	#ifdef FIREWALL_MODE
+		// No KISS serial output in firewall mode - serial is used for debug logging only
 		return;
 	#endif
 	#if HAS_BLUETOOTH || HAS_BLE == true
@@ -1452,11 +1459,23 @@ int map_modem_output_to_target_power(int modem_output_dbm) {
 
 void setTXPower() {
 	if (radio_online) {
+		int requested_lora_txp = lora_txp;
 		int mapped_lora_txp = map_target_power_to_modem_output(lora_txp);
 		
 		#if HAS_LORA_PA
 			int real_lora_txp = map_modem_output_to_target_power(mapped_lora_txp);
 			lora_txp = real_lora_txp;
+		#endif
+
+		#if defined(FIREWALL_MODE) && (BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC32_V3)
+			Serial.printf("[Boundary] TXP: requested=%d effective=%d modem=%d pa=%u\r\n",
+				requested_lora_txp, lora_txp, mapped_lora_txp,
+				#if HAS_LORA_PA
+					(unsigned)lora_pa_model
+				#else
+					0u
+				#endif
+			);
 		#endif
 
 		if (model == MODEL_11) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);

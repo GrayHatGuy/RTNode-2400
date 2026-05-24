@@ -2,6 +2,7 @@
   {
     "tag": "v1.0.30",
     "name": "v1.0.30 \u2014 Heltec V4 boot reliability (DIO image header)",
+    "stability": "beta",
     "prerelease": false,
     "published_at": "2026-05-01T21:22:08Z",
     "assets": [
@@ -14,6 +15,7 @@
   {
     "tag": "v1.0.29",
     "name": "v1.0.29 \u2014 Heltec V4.3 boot/RX fix",
+    "stability": "beta",
     "prerelease": false,
     "published_at": "2026-04-28T21:40:31Z",
     "assets": [
@@ -26,6 +28,7 @@
   {
     "tag": "v1.0.28",
     "name": "v1.0.28 \u2014 Fix LoRa routing (MODE_FULL)",
+    "stability": "beta",
     "prerelease": false,
     "published_at": "2026-04-28T18:14:26Z",
     "assets": [
@@ -38,6 +41,7 @@
   {
     "tag": "v1.0.27",
     "name": "v1.0.27 \u2014 Configurable LoRa airtime limits",
+    "stability": "beta",
     "prerelease": false,
     "published_at": "2026-04-27T03:27:06Z",
     "assets": [
@@ -50,6 +54,7 @@
   {
     "tag": "v1.0.26",
     "name": "v1.0.26 \u2014 Heltec V4.3 support",
+    "stability": "beta",
     "prerelease": false,
     "published_at": "2026-04-27T02:46:30Z",
     "assets": [

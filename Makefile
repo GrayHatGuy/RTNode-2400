@@ -287,11 +287,15 @@ release-all: console-site spiffs-image release-tbeam release-tbeam_sx1262 releas
 # by flash.py.  Individual binaries are stored flat inside the zip.
 release-pio:
 	pio run -e rtnode_heltec_v4 -e rtnode_heltec_v3
+	python3 flash.py --board v4 --merge-only --offline
+	python3 flash.py --board v3 --merge-only --offline
 	python3 -c "\
 import zipfile, os, sys; \
 variants = [ \
     ('.pio/build/rtnode_heltec_v4', 'rtnode_heltec_v4.bin'), \
+    ('.pio/build/rtnode_heltec_v4', 'rtnode_heltec_v4_merged.bin'), \
     ('.pio/build/rtnode_heltec_v3', 'rtnode_heltec_v3.bin'), \
+    ('.pio/build/rtnode_heltec_v3', 'rtnode_heltec_v3_merged.bin'), \
 ]; \
 missing = [(d,n) for d,n in variants if not os.path.isfile(os.path.join(d,n))]; \
 [sys.exit(f'Missing: {os.path.join(d,n)}') for d,n in missing]; \

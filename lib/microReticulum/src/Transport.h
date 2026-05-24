@@ -82,13 +82,15 @@ namespace RNS {
 			PacketEntry(const Packet& packet) :
 				_raw(packet.raw()),
 				_sent_at(packet.sent_at()),
-				_destination_hash(packet.destination_hash())
+				_destination_hash(packet.destination_hash()),
+				_receiving_interface(packet.receiving_interface())
 			{
 			}
 		public:
 			Bytes _raw;
 			double _sent_at = 0;
 			Bytes _destination_hash;
+			Interface _receiving_interface = {Type::NONE};
 			bool _cached = false;
 #ifndef NDEBUG
 			inline std::string debugString() const {
@@ -442,10 +444,11 @@ namespace RNS {
 		//static std::set<Interface> _local_client_interfaces;
 		static std::set<std::reference_wrapper<const Interface>, std::less<const Interface>> _local_client_interfaces;
 
-		static std::map<Bytes, const Interface&> _pending_local_path_requests;
+		static std::map<Bytes, Bytes> _pending_local_path_requests;
 
 		// CBA
 		static std::map<Bytes, PacketEntry> _packet_table;           // A lookup table containing announce packets for known paths
+		static std::set<Bytes> _known_cached_packet_hashes;          // Packet hashes confirmed cached in this boot
 
 		//z _local_client_rssi_cache    = []
 		//z _local_client_snr_cache     = []

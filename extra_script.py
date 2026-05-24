@@ -61,23 +61,7 @@ def post_upload(source, target, env):
     print("Board:", env.GetProjectOption("board"))
     print("Variant:", env.GetProjectOption("custom_variant"))
     print("Serial port:", env.subst("$UPLOAD_PORT"))
-    # do some actions
-    platform = env.GetProjectOption("platform")
-    board = env.GetProjectOption("board")
-    if (platform == "espressif32"):
-        time.sleep(10)
-        # device provisioning is incomplete and only currently appropriate for 915MHz T-Beam
-        device_provision(env)
-        firmware_hash(source, env)
-        # firmware pacakaging is incomplete due to missing console image
-        #firmware_package(env)
-    elif (platform == "nordicnrf52"):
-        time.sleep(5)
-        # device provisioning is incomplete and only currently appropriate for 915MHz RAK4631
-        device_provision(env)
-        firmware_hash(source, env)
-        # firmware pacakaging is incomplete due to missing console image
-        #firmware_package(env)
+    print("Skipping rnodeconf post-upload provisioning/hash steps")
 
 def post_clean(source, target, env):
     print("post_clean...")
