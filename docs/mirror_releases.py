@@ -48,6 +48,33 @@ FW_DIR = DOCS_DIR / "firmware"
 MANIFEST = FW_DIR / "versions.json"
 
 
+def load_manifest() -> list[dict]:
+    if not MANIFEST.exists():
+        return []
+
+    try:
+        data = json.loads(MANIFEST.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    return [entry for entry in data if isinstance(entry, dict) and entry.get("tag")]
+
+
+def sort_manifest(entries: list[dict]) -> list[dict]:
+    return sorted(
+        entries,
+        key=lambda entry: (entry.get("published_at") or "", entry.get("tag") or ""),
+        reverse=True,
+    )
+
+
+def merge_manifest(existing: list[dict], updates: list[dict]) -> list[dict]:
+    by_tag = {entry["tag"]: entry for entry in existing if entry.get("tag")}
+    for entry in updates:
+        by_tag[entry["tag"]] = entry
+    return sort_manifest(list(by_tag.values()))
+
+
 def gh_get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
@@ -141,6 +168,10 @@ def main() -> int:
     print(f"Mirroring {len(releases)} release(s) into {FW_DIR}")
 
     manifest = mirror(releases)
+    if args.tag:
+        manifest = merge_manifest(load_manifest(), manifest)
+    else:
+        manifest = sort_manifest(manifest)
 
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")

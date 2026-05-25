@@ -1,0 +1,78 @@
+(.venv) (base) james@MacBook-Air-M1 RTNode-HeltecV4 % pio device monitor
+*****************************************************************************************************
+Obsolete PIO Core v6.1.18 is used (previous was 6.1.19)
+Please remove multiple PIO Cores from a system:
+https://docs.platformio.org/en/latest/core/installation/troubleshooting.html
+*****************************************************************************************************
+--- Terminal on /dev/cu.usbmodem114401 | 115200 8-N-1
+--- Available filters and text transformations: colorize, debug, default, direct, esp32_exception_decoder, hexlify, log2file, nocontrol, printable, send_on_enter, time
+--- More details at https://bit.ly/pio-monitor-filters
+--- Quit: Ctrl+C | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
+[Boundary] Released BT controller memory
+[Boundary] Provisioning check bypassed, modem installed
+[Boundary] Loaded LoRa config from EEPROM
+[Boundary] LoRa: freq=914875000 bw=125000 sf=10 cr=5 txp=28
+00:00:04.059 [---] Initializing filesystem...
+00:00:04.061 [INF] LittleFS mounting filesystem
+00:00:04.068 [DBG] LittleFS filesystem is ready
+00:00:04.070 [---] write_file: writing to file /test
+[  4074][E][vfs_api.cpp:105] open(): /test does not exist, no permits for creation
+00:00:04.193 [---] write_file: wrote 4 bytes to file /test
+00:00:04.226 [---] remove_file: removing file /test
+00:00:04.232 [---] Finished initializing
+
+00:00:04.234 [---] Registering filesystem...
+00:00:04.235 [---] Registering filesystem...
+00:00:04.235 [---] Listing filesystem...
+00:00:04.236 [---] Finished listing
+00:00:04.237 [---] FILE: destination_table
+00:00:04.238 [---] read_file: reading from file /destination_table
+00:00:04.245 [---] read_file: read 356 bytes from file /destination_table
+00:00:04.247 [---] {"13f4b14dd364a672e853a37fb534678c":{"timestamp":54017.729,"received_from":"13f4b14dd364a672e853a37fb534678c","announce_hops":0,"expires":140406.884,"random_blobs":["8289fd3d3a0069ff6def"],"interface_hash":"4d520f5a502f14f2be77cbc242d2f79f619f42750c3de07c12840d6540627825","packet_hash":"2b2d3642232acf559abc0816bd160dd71239d8e750ffadff315c9435607ec864"},}
+
+Starting RNS...
+15:02:50.617 [INF] Total memory: 323260
+15:02:50.623 [INF] Total flash: 3538944
+15:02:50.624 [INF] Starting Transport...
+15:02:50.625 [INF] Transport starting...
+15:02:50.727 [VRB] Loaded Transport Identity from storage
+15:02:50.729 [INF] Transport mode is enabled
+15:02:51.749 [WRN] Transport::start: removing invalid path to 13f4b14dd364a672e853a37fb534678c due to missing announce packet
+15:02:51.830 [VRB] [LoRa] TX 167 bytes
+15:02:51.831 [NOT] Transport Instance will respond to probe requests on {Destination:6e89720e26d640310bdbce49973720bb}
+15:02:51.833 [VRB] Transport instance {Identity:11a6392444a36824dd8a0e7b9caba59d} started
+15:02:51.854 [VRB] mem_free: 214004 (66%) [0] flash_free: 3522560 (99%) [0] paths: 0 dsts: 3 revr: 0 annc: 0 held: 0
+15:02:51.856 [VRB] preqs: 0 dpreqs: 0 ppreqs: 0 dprt: 0 cdsts: 2 chshs: 2
+15:02:51.857 [VRB] phl: 1 rcp: 0 lt: 0 pl: 0 al: 0 tun: 0
+15:02:51.858 [VRB] bla: 0 bma: 0
+15:02:51.859 [VRB] pin: 0 pout: 1 padd: 0 dpr: 1 ikd: 0 ia: 0
+
+[TcpIF] Server listening on port 4242
+[mDNS] STA up: mynode.local (_reticulum._tcp port 4242)
+15:02:51.876 [VRB] [Advertise] Device advertisement disabled (configure in portal to enable)
+[Boundary] Boot stable — bootloop counter cleared
+15:02:52.477 [VRB] [LoRa] TXSTART 167 bytes
+15:02:58.173 [VRB] [LoRa] RX 51 bytes
+15:02:58.174 [VRB] [PKT] IN iface=Interface[LoRaInterface] sz=51 type=0 ctx=0 hdr=0 dstt=2 hops=1 dst=6b9f6601 tid=none
+15:02:58.176 [VRB] [HEAP-TEL] boundary: -828 bytes (bma=2 phl=1)
+15:02:58.178 [VRB] [PATH] REQ dst=13f4b14d from=Interface[LoRaInterface] local=0 sz=32
+15:02:58.182 [VRB] [LoRa] TX 67 bytes
+15:02:58.185 [VRB] [HEAP-TEL] inbound: -1484 bytes (heap=204200 pin=1 bma=3 phl=3 lt=0 revr=0)
+15:02:58.383 [VRB] [LoRa] TXSTART 67 bytes
+15:03:07.506 [VRB] [LoRa] RX raw-shift fix: prepend 0x00 (hops byte was 19)
+15:03:07.508 [VRB] [LoRa] RX 227 bytes
+15:03:07.509 [VRB] [PKT] IN iface=Interface[LoRaInterface] sz=227 type=0 ctx=0 hdr=0 dstt=0 hops=1 dst=13f4b14d tid=none
+15:03:07.511 [VRB] [HEAP-TEL] boundary: -960 bytes (bma=4 phl=3)
+15:03:07.515 [VRB] [LoRa] TX 67 bytes
+15:03:07.516 [VRB] [HEAP-TEL] inbound: -1164 bytes (heap=203476 pin=2 bma=4 phl=5 lt=0 revr=0)
+15:03:07.714 [VRB] [LoRa] TXSTART 67 bytes
+15:03:10.053 [VRB] [LoRa] RX 51 bytes
+15:03:10.056 [VRB] [PKT] IN iface=Interface[LoRaInterface] sz=51 type=0 ctx=0 hdr=0 dstt=2 hops=1 dst=6b9f6601 tid=none
+15:03:10.057 [VRB] [HEAP-TEL] boundary: -808 bytes (bma=5 phl=5)
+15:03:10.059 [VRB] [PATH] REQ dst=13f4b14d from=Interface[LoRaInterface] local=0 sz=32
+15:03:10.061 [VRB] [HEAP-TEL] inbound: -1012 bytes (heap=203172 pin=3 bma=5 phl=6 lt=0 revr=0)
+15:03:14.124 [VRB] [LoRa] RX 51 bytes
+15:03:14.126 [VRB] [PKT] IN iface=Interface[LoRaInterface] sz=51 type=0 ctx=0 hdr=0 dstt=2 hops=1 dst=6b9f6601 tid=none
+15:03:14.127 [VRB] [HEAP-TEL] boundary: -792 bytes (bma=6 phl=6)
+15:03:14.129 [VRB] [PATH] REQ dst=13f4b14d from=Interface[LoRaInterface] local=0 sz=32
+15:03:14.131 [VRB] [HEAP-TEL] inbound: -996 bytes (heap=202724 pin=4 bma=6 phl=7 lt=0 revr=0)
