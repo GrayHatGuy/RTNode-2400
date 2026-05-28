@@ -18,6 +18,8 @@ rtnode_heltec_v3.bin
 Release/*.hex
 Release/*.zip
 Release/*.json
+rtnode_firmware.zip
+rtnode_heltec_v*_app.bin
 # Pre-built firmware artifacts are no longer committed — firmware ships as a
 # release archive (rtnode_firmware.zip). Build components live in .pio/build/.
 Release/*.bin
@@ -25,6 +27,22 @@ Release/*.bin
 # Place it at Release/esptool/esptool (macOS/Linux) or Release/esptool/esptool.exe (Windows).
 Release/esptool/esptool
 Release/esptool/esptool.exe
+
+# Generated proof/flood harness runtime state
+tests/filter_stress_lora_flood*/
+tests/filter_stress_rtnode_serial*.log
+tests/harness_*/
+tests/proof_probe_filter_*/
+tests/proof_probe_lan_tcp_to_tcp/
+tests/proof_probe_lan_tcp_to_tcp_ip/
+tests/proof_probe_*_rtnode_serial.log
+tests/proof_probe_mixed_lora_to_tcp/
+tests/proof_probe_mixed_tcp_to_lora/
+tests/proof_probe_state/
+tests/proof_probe_v*_client/
+tests/proof_probe_v*_server/
+tests/rnsd_v*/
+
 Console/build
 build/*
 .pio/*

@@ -1,5 +1,18 @@
 [
   {
+    "tag": "v1.0.33",
+    "name": "v1.0.33 Beta \u2014 mixed-path proof routing and harnesses",
+    "stability": "beta",
+    "prerelease": true,
+    "published_at": "2026-05-10T19:41:00Z",
+    "assets": [
+      "rtnode_heltec_v3.bin",
+      "rtnode_heltec_v3_merged.bin",
+      "rtnode_heltec_v4.bin",
+      "rtnode_heltec_v4_merged.bin"
+    ]
+  },
+  {
     "tag": "v1.0.30",
     "name": "v1.0.30 \u2014 Heltec V4 boot reliability (DIO image header)",
     "stability": "beta",
