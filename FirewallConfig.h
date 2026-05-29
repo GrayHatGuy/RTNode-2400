@@ -44,7 +44,7 @@ void config_portal_start();
 void config_portal_stop();
 void config_portal_loop();
 bool config_portal_is_active();
-bool boundary_needs_config();
+bool firewall_needs_config();
 
 // ─── Common bandwidth values (Hz) ───────────────────────────────────────────
 // These match Reticulum standard channel plans
@@ -759,7 +759,7 @@ static void config_handle_redirect() {
 }
 
 // ─── Check if config is needed ───────────────────────────────────────────────
-bool boundary_needs_config() {
+bool firewall_needs_config() {
     // If the RTNode app marker is missing, this node was either never
     // configured by RTNode or was flashed from a different firmware family
     // such as stock RNode. Force the portal so RTNode can claim and rewrite

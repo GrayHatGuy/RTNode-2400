@@ -109,13 +109,15 @@ def device_provision(env):
         env.Execute("rnodeconf --product 10 --model 12 --hwrev 1 --rom " + env.subst("$UPLOAD_PORT"))
     elif variant in ("heltec_t114", "heltec_t114_local"):
         env.Execute("rnodeconf --product c2 --model c7 --hwrev 1 --rom " + env.subst("$UPLOAD_PORT"))
-    elif variant in ("twatch_s3_plus",):
+    elif variant in ("twatch_s3_plus", "twatch_s3_plus_boundary", "twatch_s3_plus_boundary_local"):
         # T-Watch S3 Plus carries an SX1280 (2.4 GHz) like the T3S3
         # SX1280 module, but on a different board. We reuse the upstream
         # T3S3-class product/model IDs (b1 / ac) so rnodeconf accepts
         # the bake without modification — the firmware's BOARD_MODEL
         # build flag (BOARD_TWATCH_S3_PLUS) handles the actual hardware
-        # differences.
+        # differences. Same EEPROM bake for all three variant flavours
+        # (base / boundary / boundary_local) since EEPROM identifies the
+        # hardware, not the firmware mode.
         env.Execute("rnodeconf --product b1 --model ac --hwrev 1 --rom " + env.subst("$UPLOAD_PORT"))
 
 def firmware_hash(source, env):

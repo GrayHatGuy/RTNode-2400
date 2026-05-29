@@ -279,11 +279,11 @@ TcpInterface*  tcp_interface_ptr = nullptr;
 RNS::Interface local_tcp_rns_interface(RNS::Type::NONE);
 TcpInterface*  local_tcp_interface_ptr = nullptr;
 // RTC memory flag — survives software reset but not power cycle
-RTC_NOINIT_ATTR uint32_t boundary_config_request;
-#define BOUNDARY_CONFIG_MAGIC 0xC0F19A7E
+RTC_NOINIT_ATTR uint32_t firewall_config_request;
+#define FIREWALL_CONFIG_MAGIC 0xC0F19A7E
 // RTC flag to skip config portal on next boot (set when user powers off from WCC)
-RTC_NOINIT_ATTR uint32_t boundary_skip_config;
-#define BOUNDARY_SKIP_MAGIC 0x5E1FC0F0
+RTC_NOINIT_ATTR uint32_t firewall_skip_config;
+#define FIREWALL_SKIP_MAGIC 0x5E1FC0F0
 
 // Bootloop detection: count rapid reboots in RTC memory.
 // After BOOTLOOP_THRESHOLD consecutive reboots within BOOTLOOP_WINDOW_MS,
@@ -577,11 +577,11 @@ void setup() {
     // Enter config mode if: first boot with no config, OR button-triggered reboot,
     // OR bootloop detected
     bool app_marker_missing = !firewall_app_marker_valid();
-    bool need_config = boundary_needs_config();
-    bool config_requested = (boundary_config_request == BOUNDARY_CONFIG_MAGIC);
-    bool skip_config = (boundary_skip_config == BOUNDARY_SKIP_MAGIC);
-    boundary_config_request = 0;  // Clear flag immediately
-    boundary_skip_config = 0;     // Clear skip flag immediately
+    bool need_config = firewall_needs_config();
+    bool config_requested = (firewall_config_request == FIREWALL_CONFIG_MAGIC);
+    bool skip_config = (firewall_skip_config == FIREWALL_SKIP_MAGIC);
+    firewall_config_request = 0;  // Clear flag immediately
+    firewall_skip_config = 0;     // Clear skip flag immediately
 
     // Skip flag only suppresses a button-triggered re-entry, not a genuinely
     // unconfigured device.  If there's no config saved, always show the portal.
@@ -613,7 +613,7 @@ void setup() {
         headless_led_ramp();
 
         // Button handling: allow 1-3s press to turn off (deep sleep)
-        // Next power-on boots to normal mode since boundary_config_request is cleared
+        // Next power-on boots to normal mode since firewall_config_request is cleared
         #if HAS_INPUT
         {
           int btn = digitalRead(pin_btn_usr1);
@@ -625,7 +625,7 @@ void setup() {
             wcc_btn_down = false;
             if (held >= 700 && held <= 5000) {
               Serial.println("[Boundary] Button press in WCC mode — powering off");
-              boundary_skip_config = BOUNDARY_SKIP_MAGIC;  // Skip config on next boot
+              firewall_skip_config = FIREWALL_SKIP_MAGIC;  // Skip config on next boot
               headless_led_off();
               config_portal_stop();
               #if HAS_SLEEP
@@ -998,7 +998,6 @@ void setup() {
 #ifdef FIREWALL_MODE
       // Cache this node's destination hash in RTC memory so the captive-portal
       // config page can show it without needing RNS to be running.
-      #ifdef BOUNDARY_MODE
       {
         std::string h = destination.hash().toHex();
         size_t len = h.length();
@@ -1007,7 +1006,6 @@ void setup() {
         rtc_node_hash_hex[len] = '\0';
         rtc_node_hash_magic = NODE_HASH_RTC_MAGIC;
       }
-      #endif // BOUNDARY_MODE
 
       // Initialise the Reticulum interface-discovery announcer. Per the
       // Reticulum manual (https://reticulum.network/manual/interfaces.html)
@@ -2851,7 +2849,7 @@ void button_event(uint8_t event, unsigned long duration) {
       //   short = display unblank
       if (duration > 5000) {
         Serial.println("[Boundary] Button hold >5s — rebooting into config mode");
-        boundary_config_request = BOUNDARY_CONFIG_MAGIC;
+        firewall_config_request = FIREWALL_CONFIG_MAGIC;
         delay(100);
         ESP.restart();
       } else if (duration > 700) {

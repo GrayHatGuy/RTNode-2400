@@ -531,7 +531,7 @@
       #define HAS_CONSOLE true
       #define HAS_WIFI true
       #define HAS_BLUETOOTH false
-      #ifdef BOUNDARY_MODE
+      #ifdef FIREWALL_MODE
         #define HAS_BLE false
       #else
         #define HAS_BLE true
@@ -637,7 +637,7 @@
       #define HAS_CONSOLE true
       #define HAS_WIFI true
       #define HAS_BLUETOOTH false
-      #ifdef BOUNDARY_MODE
+      #ifdef FIREWALL_MODE
         #define HAS_BLE false
       #else
         #define HAS_BLE true
