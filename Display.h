@@ -23,6 +23,8 @@
 #if BOARD_MODEL != BOARD_TECHO
   #if BOARD_MODEL == BOARD_TDECK
     #include <Adafruit_ST7789.h>
+  #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    #include <Adafruit_ST7789.h>
   #elif BOARD_MODEL == BOARD_HELTEC_T114
     #include "ST7789.h"
     #define COLOR565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
@@ -103,6 +105,12 @@
   #define SCL_OLED 6
   #define SDA_OLED 5
   #define DISP_CUSTOM_ADDR true
+#elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+  // ST7789 240x240. Pin constants are defined in Boards.h. The render
+  // loop sizing (DISP_W=128, DISP_H=64) stays — RNode renders into that
+  // virtual area and the result appears in the upper-left corner of the
+  // physical 240x240 panel. Sufficient for debug/soak.
+  #define DISP_ADDR -1
 #else
   #define DISP_RST -1
   #define DISP_ADDR 0x3C
@@ -113,6 +121,22 @@
 
 #if BOARD_MODEL == BOARD_TDECK
   Adafruit_ST7789 display = Adafruit_ST7789(DISPLAY_CS, DISPLAY_DC, -1);
+  #define SSD1306_WHITE ST77XX_WHITE
+  #define SSD1306_BLACK ST77XX_BLACK
+#elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+  // Dedicated HSPI bus — primary SPI is reserved for the SX1280 radio.
+  SPIClass spiDisp(HSPI);
+  // Subclass adds the SSD1306-style buffered-display API (clearDisplay,
+  // display) as no-op/direct-draw shims so RNode's render loop, which
+  // assumes those methods, compiles and works unmodified.
+  class Adafruit_ST7789_RNode : public Adafruit_ST7789 {
+    public:
+      Adafruit_ST7789_RNode(SPIClass *spi, int8_t cs, int8_t dc, int8_t rst)
+        : Adafruit_ST7789(spi, cs, dc, rst) {}
+      void clearDisplay() { fillScreen(ST77XX_BLACK); }
+      void display()      { /* no-op: ST7789 is direct-draw, every gfx call hit the panel */ }
+  };
+  Adafruit_ST7789_RNode display(&spiDisp, DISPLAY_CS, DISPLAY_DC, DISPLAY_RST);
   #define SSD1306_WHITE ST77XX_WHITE
   #define SSD1306_BLACK ST77XX_BLACK
 #elif BOARD_MODEL == BOARD_HELTEC_T114
@@ -245,6 +269,13 @@ uint8_t display_contrast = 0x00;
     if (value == 0) { analogWrite(pin_backlight, 0); }
     else            { analogWrite(pin_backlight, value); }
   }
+#elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+  void set_contrast(Adafruit_ST7789_RNode *display, uint8_t value) {
+    // Backlight on/off only. PWM dimming would require an LEDC channel —
+    // matches LilyGoLib's ledcAttach behaviour but adds setup. Skipping
+    // for now; on/off is enough to see status during debug/soak.
+    digitalWrite(DISPLAY_BL, value > 0 ? HIGH : LOW);
+  }
 #elif BOARD_MODEL == BOARD_TDECK
   void set_contrast(Adafruit_ST7789 *display, uint8_t value) {
     static uint8_t level = 0;
@@ -333,6 +364,11 @@ bool display_init() {
       Wire.begin(SDA_OLED, SCL_OLED);
     #elif BOARD_MODEL == BOARD_XIAO_S3
       Wire.begin(SDA_OLED, SCL_OLED);
+    #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+      // Bring up dedicated HSPI bus for the ST7789 and turn the backlight on.
+      pinMode(DISPLAY_BL, OUTPUT);
+      digitalWrite(DISPLAY_BL, HIGH);
+      spiDisp.begin(DISPLAY_SCK, DISPLAY_MISO, DISPLAY_MOSI, DISPLAY_CS);
     #endif
 
     #if HAS_EEPROM
@@ -382,6 +418,16 @@ bool display_init() {
     #elif BOARD_MODEL == BOARD_TDECK
     display.init(240, 320);
     display.setSPISpeed(80e6);
+    #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    display.init(240, 240);
+    display.setSPISpeed(40e6);
+    // LilyGoLib factory firmware calls esp_lcd_panel_invert_color(true)
+    // on this panel; matching that here keeps colour polarity correct.
+    display.invertDisplay(true);
+    display.fillScreen(ST77XX_BLACK);
+    // Skip the "return false" branch that follows; Adafruit_ST7789 has
+    // no boolean begin().
+    if (false) {
     #elif BOARD_MODEL == BOARD_HELTEC_T114
     display.init();
     // set white as default pixel colour for Heltec T114
@@ -442,6 +488,9 @@ bool display_init() {
         #elif BOARD_MODEL == BOARD_TDECK
           disp_mode = DISP_MODE_PORTRAIT;
           display.setRotation(3);
+        #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+          disp_mode = DISP_MODE_PORTRAIT;
+          display.setRotation(2);  // matches Meshtastic t-watch-s3-plus variant
         #elif BOARD_MODEL == BOARD_TECHO
           disp_mode = DISP_MODE_PORTRAIT;
           display.setRotation(3);

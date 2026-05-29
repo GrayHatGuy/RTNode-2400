@@ -643,12 +643,15 @@
         #define HAS_BLE true
       #endif
 
-      // Display + PMU are present on the hardware (ST7789 240x240 +
-      // AXP2101) but not wired into RNode yet — wiring them needs
-      // per-board init in Display.h (ST7789 doesn't implement the
-      // SSD1306 clearDisplay()/display() API the render loop assumes)
-      // and Power.h (XPowersLib AXP2101 bringup). Both left as TODOs.
-      #define HAS_DISPLAY false
+      // ST7789 240x240 display: wired in Display.h via a small subclass
+      // of Adafruit_ST7789 that shims clearDisplay()/display() (the
+      // SSD1306 API the render loop calls but ST7789 doesn't natively
+      // implement). The panel sits on a dedicated HSPI bus because the
+      // primary SPI is owned by the SX1280 LoRa radio.
+      //
+      // AXP2101 PMU is present on the hardware (I2C0) but not wired
+      // into Power.h yet — XPowersLib bringup is left as a follow-up.
+      #define HAS_DISPLAY true
       #define HAS_PMU false
       #define HAS_NP false
       #define HAS_SD false
@@ -679,6 +682,17 @@
       #define I2C_SDA 10
       #define I2C_SCL 11
       #define PMU_IRQ 21
+
+      // ST7789 240x240 TFT — dedicated HSPI bus (independent of LoRa SPI).
+      // Pin values cross-validated against LilyGoLib's pins_arduino.h
+      // and the Meshtastic t-watch-s3-plus variant; both agree.
+      const int DISPLAY_CS   = 12;
+      const int DISPLAY_DC   = 38;
+      const int DISPLAY_RST  = -1;
+      const int DISPLAY_MOSI = 13;
+      const int DISPLAY_SCK  = 18;
+      const int DISPLAY_MISO = -1;
+      const int DISPLAY_BL   = 45;
 
       // No discrete RX/TX LEDs on T-Watch; route to no-ops.
       const int pin_led_rx = -1;
