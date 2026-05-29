@@ -649,10 +649,15 @@
       // implement). The panel sits on a dedicated HSPI bus because the
       // primary SPI is owned by the SX1280 LoRa radio.
       //
-      // AXP2101 PMU is present on the hardware (I2C0) but not wired
-      // into Power.h yet — XPowersLib bringup is left as a follow-up.
+      // AXP2101 PMU: Tier 2 bringup in Power.h. READ-ONLY access
+      // (battery voltage / percent / charging state). NO setPowerChannel*,
+      // enableALDO*, or disableALDO* calls — the rails (ALDO4 = SX1280,
+      // ALDO2/3 = display, BLDO1/2 = GPS/haptic) are configured by the
+      // prior LilyGoLib firmware and persist in AXP2101 NVRAM across CPU
+      // resets. Touching ALDO4 is the Meshtastic T-Watch failure mode
+      // that silently kills the SX1280; we deliberately do not.
       #define HAS_DISPLAY true
-      #define HAS_PMU false
+      #define HAS_PMU true
       #define HAS_NP false
       #define HAS_SD false
       #define HAS_EEPROM true

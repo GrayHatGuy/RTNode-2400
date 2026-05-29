@@ -19,7 +19,7 @@
 bool pmu_temp_sensor_ready = false;
 float pmu_temperature = PMU_TEMP_MIN-1;
 
-#if BOARD_MODEL == BOARD_TBEAM || BOARD_MODEL == BOARD_TBEAM_S_V1
+#if BOARD_MODEL == BOARD_TBEAM || BOARD_MODEL == BOARD_TBEAM_S_V1 || BOARD_MODEL == BOARD_TWATCH_S3_PLUS
   #include <XPowersLib.h>
   XPowersLibInterface* PMU = NULL;
 
@@ -31,21 +31,32 @@ float pmu_temperature = PMU_TEMP_MIN-1;
     #endif
   #endif
 
-  #define BAT_V_MIN       3.15
-  #define BAT_V_MAX       4.14
+  #if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    // Li-Po ~380 mAh; typical operating range 3.30 V (cutoff) — 4.20 V (full)
+    #define BAT_V_MIN       3.30
+    #define BAT_V_MAX       4.20
+  #else
+    #define BAT_V_MIN       3.15
+    #define BAT_V_MAX       4.14
+  #endif
 
-  void disablePeripherals() {
-    if (PMU) {
-      // GNSS RTC PowerVDD
-      PMU->enablePowerOutput(XPOWERS_VBACKUP);
+  // disablePeripherals() only makes sense on the TBeam family; on the
+  // T-Watch ALDO2/3/4 power the display/touch/SX1280 and disabling them
+  // would kill the radio (Meshtastic T-Watch failure mode).
+  #if BOARD_MODEL == BOARD_TBEAM || BOARD_MODEL == BOARD_TBEAM_S_V1
+    void disablePeripherals() {
+      if (PMU) {
+        // GNSS RTC PowerVDD
+        PMU->enablePowerOutput(XPOWERS_VBACKUP);
 
-      // LoRa VDD
-      PMU->disablePowerOutput(XPOWERS_ALDO2);
+        // LoRa VDD
+        PMU->disablePowerOutput(XPOWERS_ALDO2);
 
-      // GNSS VDD
-      PMU->disablePowerOutput(XPOWERS_ALDO3);
+        // GNSS VDD
+        PMU->disablePowerOutput(XPOWERS_ALDO3);
+      }
     }
-  }
+  #endif
 
   bool pmuInterrupt;
   void setPmuFlag()
@@ -308,7 +319,7 @@ void measure_battery() {
       // }
     }
 
-  #elif BOARD_MODEL == BOARD_TBEAM || BOARD_MODEL == BOARD_TBEAM_S_V1
+  #elif BOARD_MODEL == BOARD_TBEAM || BOARD_MODEL == BOARD_TBEAM_S_V1 || BOARD_MODEL == BOARD_TWATCH_S3_PLUS
     if (PMU) {
       float discharge_current = 0;
       float charge_current    = 0;
@@ -643,7 +654,51 @@ bool init_pmu() {
     PMU->enableBattVoltageMeasure();
 
 
-    return true; 
+    return true;
+  #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    // ─── T-Watch S3 Plus AXP2101 — Tier 2 READ-ONLY bringup ──────────
+    //
+    // The prior LilyGoLib firmware already configured every rail this
+    // board needs (ALDO2 display backlight, ALDO3 display+touch,
+    // ALDO4 SX1280 radio, BLDO1 GPS, BLDO2 DRV2605 haptic). AXP2101
+    // holds rail enable/voltage state in NVRAM across CPU resets, so
+    // when our firmware comes up the rails are already correct. We
+    // ONLY touch the PMU to:
+    //   * Verify it enumerates over I2C
+    //   * Disable TS-pin temperature measurement (no battery
+    //     thermistor on this board; leaving it on causes the AXP to
+    //     refuse charge)
+    //   * Read battery voltage / percent / charging state from
+    //     measure_battery()
+    //
+    // Explicitly NOT calling setPowerChannelVoltage / enablePowerOutput
+    // / disablePowerOutput on any rail — touching ALDO4 in particular
+    // is the Meshtastic T-Watch bug that silently kills the SX1280.
+    Wire.begin(I2C_SDA, I2C_SCL);
+
+    if (!PMU) {
+        PMU = new XPowersAXP2101(PMU_WIRE_PORT);
+        if (!PMU->init()) {
+            delete PMU;
+            PMU = NULL;
+        }
+    }
+
+    if (!PMU) {
+        return false;
+    }
+
+    // No battery thermistor on this board; without disabling the
+    // TS-pin measurement the AXP refuses to charge.
+    PMU->disableTSPinMeasure();
+
+    // Make sure the ADC paths we read in measure_battery() are armed.
+    // These calls only enable measurement; they do not change rail
+    // state.
+    PMU->enableBattVoltageMeasure();
+    PMU->enableVbusVoltageMeasure();
+
+    return true;
   #else
     return false;
   #endif
