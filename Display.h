@@ -126,17 +126,76 @@
 #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
   // Dedicated HSPI bus — primary SPI is reserved for the SX1280 radio.
   SPIClass spiDisp(HSPI);
-  // Subclass adds the SSD1306-style buffered-display API (clearDisplay,
-  // display) as no-op/direct-draw shims so RNode's render loop, which
-  // assumes those methods, compiles and works unmodified.
-  class Adafruit_ST7789_RNode : public Adafruit_ST7789 {
+
+  // Panel hardware. Hidden from RNode's render loop — RNode draws into
+  // the GFXcanvas16-backed `display` below and the canvas blits here on
+  // display.display().
+  static Adafruit_ST7789 twatch_panel(&spiDisp, DISPLAY_CS, DISPLAY_DC, DISPLAY_RST);
+
+  // Offscreen-buffered display shim. IS-A GFXcanvas16 (so every
+  // Adafruit_GFX draw call RNode makes lands in RAM, not on the panel),
+  // HAS-A panel for hardware ops. Two reasons:
+  //   1. Direct-draw was flickering — `clearDisplay()` did a full-panel
+  //      erase, RNode then rebuilt the frame, visible as a flash every
+  //      ~150 ms. With a canvas the erase is in RAM (invisible) and the
+  //      blit is one atomic SPI burst.
+  //   2. RNode's UI is sized 128x64 (DISP_W x DISP_H, hard-coded for
+  //      SSD1306). On a 240x240 panel that's a postage stamp in the
+  //      corner. The display() shim blits canvas to panel at 2x
+  //      nearest-neighbour scale and centres vertically. Horizontal
+  //      overflows by 8 px on each side (256 > 240) and is clipped —
+  //      acceptable for status icons / counters at the panel edges.
+  class Adafruit_ST7789_RNode : public GFXcanvas16 {
     public:
-      Adafruit_ST7789_RNode(SPIClass *spi, int8_t cs, int8_t dc, int8_t rst)
-        : Adafruit_ST7789(spi, cs, dc, rst) {}
+      Adafruit_ST7789_RNode() : GFXcanvas16(128, 64) {}
+
+      // SSD1306-style buffered-display API
       void clearDisplay() { fillScreen(ST77XX_BLACK); }
-      void display()      { /* no-op: ST7789 is direct-draw, every gfx call hit the panel */ }
+      void display() {
+        const int16_t SRC_W = 128, SRC_H = 64;
+        const int16_t SCALE = 2;
+        const int16_t DST_W = SRC_W * SCALE;            // 256
+        const int16_t DST_H = SRC_H * SCALE;            // 128
+        const int16_t PANEL_W = 240, PANEL_H = 240;
+        const int16_t off_x = (PANEL_W - DST_W) / 2;    // -8  (will clip 8 px each side)
+        const int16_t off_y = (PANEL_H - DST_H) / 2;    // 56  (centred vertically)
+        const int16_t blit_x = (off_x < 0) ? 0 : off_x;
+        const int16_t blit_w = (off_x < 0) ? PANEL_W : DST_W;
+        const int16_t skip_lp = (off_x < 0) ? -off_x : 0;   // clip pixels at left edge
+
+        // Expand one source row at a time to a 256-pixel destination
+        // row buffer, then send it twice (2x vertical). One SPI burst
+        // per row pair, full hardware blit speed.
+        static uint16_t row_buf[256];
+        uint16_t *canvas_buf = getBuffer();
+
+        twatch_panel.startWrite();
+        twatch_panel.setAddrWindow(blit_x, off_y, blit_w, DST_H);
+        for (int16_t sy = 0; sy < SRC_H; sy++) {
+          uint16_t *src_row = canvas_buf + sy * SRC_W;
+          for (int16_t sx = 0; sx < SRC_W; sx++) {
+            uint16_t c = src_row[sx];
+            row_buf[sx * 2]     = c;
+            row_buf[sx * 2 + 1] = c;
+          }
+          twatch_panel.writePixels(row_buf + skip_lp, blit_w);
+          twatch_panel.writePixels(row_buf + skip_lp, blit_w);
+        }
+        twatch_panel.endWrite();
+      }
+
+      // Hardware init / config — forward to the panel. Canvas stays
+      // at native 128x64; we don't rotate the canvas itself because
+      // RNode's layout math assumes a fixed 128-wide buffer.
+      void init(uint16_t w, uint16_t h)        { twatch_panel.init(w, h); }
+      void setSPISpeed(uint32_t speed)         { twatch_panel.setSPISpeed(speed); }
+      void invertDisplay(bool i)               { twatch_panel.invertDisplay(i); }
+      void setRotation(uint8_t r)              { twatch_panel.setRotation(r); /* leave canvas alone */ }
+      // Pass through fillScreen so the *panel* clears too (used during
+      // boot before the first display() blit hides any garbage).
+      void fillScreenPanel(uint16_t c)         { twatch_panel.fillScreen(c); }
   };
-  Adafruit_ST7789_RNode display(&spiDisp, DISPLAY_CS, DISPLAY_DC, DISPLAY_RST);
+  Adafruit_ST7789_RNode display;
   #define SSD1306_WHITE ST77XX_WHITE
   #define SSD1306_BLACK ST77XX_BLACK
 #elif BOARD_MODEL == BOARD_HELTEC_T114
@@ -424,9 +483,13 @@ bool display_init() {
     // LilyGoLib factory firmware calls esp_lcd_panel_invert_color(true)
     // on this panel; matching that here keeps colour polarity correct.
     display.invertDisplay(true);
+    // `display.fillScreen()` now writes the offscreen canvas (in RAM),
+    // so also clear the panel directly so boot garbage doesn't show
+    // until the first blit.
+    display.fillScreenPanel(ST77XX_BLACK);
     display.fillScreen(ST77XX_BLACK);
-    // Skip the "return false" branch that follows; Adafruit_ST7789 has
-    // no boolean begin().
+    // Skip the "return false" branch that follows; the shim has no
+    // boolean begin().
     if (false) {
     #elif BOARD_MODEL == BOARD_HELTEC_T114
     display.init();
