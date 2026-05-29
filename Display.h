@@ -152,34 +152,34 @@
       // SSD1306-style buffered-display API
       void clearDisplay() { fillScreen(ST77XX_BLACK); }
       void display() {
+        // 128x64 source -> 240x128 destination (exact horizontal fit,
+        // no clip). Horizontal scale is 240/128 = 1.875 (non-integer),
+        // implemented via nearest-neighbour column mapping. Vertical
+        // stays 2x. The non-integer horizontal means roughly 7 out of
+        // every 8 source columns get duplicated to 2 dest cols and 1
+        // gets duplicated to only 1 — visually a faint vertical seam
+        // pattern, but every source pixel is on the panel and no
+        // status icons are clipped.
         const int16_t SRC_W = 128, SRC_H = 64;
-        const int16_t SCALE = 2;
-        const int16_t DST_W = SRC_W * SCALE;            // 256
-        const int16_t DST_H = SRC_H * SCALE;            // 128
-        const int16_t PANEL_W = 240, PANEL_H = 240;
-        const int16_t off_x = (PANEL_W - DST_W) / 2;    // -8  (will clip 8 px each side)
-        const int16_t off_y = 0;                         // top-aligned (not centred Y)
-        const int16_t blit_x = (off_x < 0) ? 0 : off_x;
-        const int16_t blit_w = (off_x < 0) ? PANEL_W : DST_W;
-        const int16_t skip_lp = (off_x < 0) ? -off_x : 0;   // clip pixels at left edge
+        const int16_t DST_W = 240;
+        const int16_t DST_H = SRC_H * 2;            // 128
+        const int16_t off_x = 0;                    // exact fit horizontally
+        const int16_t off_y = 0;                    // top-aligned
 
-        // Expand one source row at a time to a 256-pixel destination
-        // row buffer, then send it twice (2x vertical). One SPI burst
-        // per row pair, full hardware blit speed.
-        static uint16_t row_buf[256];
+        static uint16_t row_buf[240];
         uint16_t *canvas_buf = getBuffer();
 
         twatch_panel.startWrite();
-        twatch_panel.setAddrWindow(blit_x, off_y, blit_w, DST_H);
+        twatch_panel.setAddrWindow(off_x, off_y, DST_W, DST_H);
         for (int16_t sy = 0; sy < SRC_H; sy++) {
           uint16_t *src_row = canvas_buf + sy * SRC_W;
-          for (int16_t sx = 0; sx < SRC_W; sx++) {
-            uint16_t c = src_row[sx];
-            row_buf[sx * 2]     = c;
-            row_buf[sx * 2 + 1] = c;
+          for (int16_t dx = 0; dx < DST_W; dx++) {
+            // sx = dx * SRC_W / DST_W = dx * 128 / 240 = dx * 8 / 15
+            int16_t sx = (dx * SRC_W) / DST_W;
+            row_buf[dx] = src_row[sx];
           }
-          twatch_panel.writePixels(row_buf + skip_lp, blit_w);
-          twatch_panel.writePixels(row_buf + skip_lp, blit_w);
+          twatch_panel.writePixels(row_buf, DST_W);   // row N*2
+          twatch_panel.writePixels(row_buf, DST_W);   // row N*2 + 1
         }
         twatch_panel.endWrite();
       }
