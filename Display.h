@@ -158,7 +158,7 @@
         const int16_t DST_H = SRC_H * SCALE;            // 128
         const int16_t PANEL_W = 240, PANEL_H = 240;
         const int16_t off_x = (PANEL_W - DST_W) / 2;    // -8  (will clip 8 px each side)
-        const int16_t off_y = (PANEL_H - DST_H) / 2;    // 56  (centred vertically)
+        const int16_t off_y = 0;                         // top-aligned (not centred Y)
         const int16_t blit_x = (off_x < 0) ? 0 : off_x;
         const int16_t blit_w = (off_x < 0) ? PANEL_W : DST_W;
         const int16_t skip_lp = (off_x < 0) ? -off_x : 0;   // clip pixels at left edge
@@ -552,8 +552,13 @@ bool display_init() {
           disp_mode = DISP_MODE_PORTRAIT;
           display.setRotation(3);
         #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
-          disp_mode = DISP_MODE_PORTRAIT;
-          display.setRotation(2);  // matches Meshtastic t-watch-s3-plus variant
+          // LANDSCAPE so update_area_positions() places disp_area at
+          // (0,0) and stat_area at (64,0) — both within the 128x64
+          // canvas. PORTRAIT puts stat_area at (0,64) which is outside
+          // the canvas, and GFXcanvas16 silently clips it -> the
+          // BT/SD/2.4G/LORA icons disappear.
+          disp_mode = DISP_MODE_LANDSCAPE;
+          display.setRotation(2);  // panel orientation (rotates the 240x240 viewport)
         #elif BOARD_MODEL == BOARD_TECHO
           disp_mode = DISP_MODE_PORTRAIT;
           display.setRotation(3);
