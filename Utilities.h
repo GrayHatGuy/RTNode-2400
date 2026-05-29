@@ -91,6 +91,8 @@ uint8_t eeprom_read(uint32_t mapped_addr);
     #include "hal/wdt_hal.h"
 	#elif BOARD_MODEL == BOARD_T3S3
 		#include "hal/wdt_hal.h"
+	#elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+		#include "hal/wdt_hal.h"
   #else
 		#include "hal/wdt_hal.h"
 	#endif
@@ -242,6 +244,14 @@ extern RNS::Reticulum reticulum;
 		void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
 		void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
 		void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+		void led_id_on()  { }
+		void led_id_off() { }
+	#elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+		// T-Watch has no discrete LEDs; activity feedback would route to display.
+		void led_rx_on()  { }
+		void led_rx_off() {	}
+		void led_tx_on()  { }
+		void led_tx_off() { }
 		void led_id_on()  { }
 		void led_id_off() { }
 	#elif BOARD_MODEL == BOARD_TBEAM
@@ -1802,6 +1812,11 @@ bool eeprom_model_valid() {
 	if (model == MODEL_A2 || model == MODEL_A7) {
 	#elif BOARD_MODEL == BOARD_T3S3
 	if (model == MODEL_A1 || model == MODEL_A6 || model == MODEL_A5 || model == MODEL_AA || model == MODEL_AC || model == MODEL_AD) {
+	#elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+	// Reuses MODEL_AC (T3S3 SX1280 2.4 GHz) so rnodeconf's existing
+	// whitelist accepts `--model ac` during the bake — no new PRODUCT/
+	// MODEL bytes invented, no rnodeconf rejection.
+	if (model == MODEL_AC) {
 	#elif BOARD_MODEL == BOARD_HMBRW
 	if (model == MODEL_FF || model == MODEL_FE) {
 	#elif BOARD_MODEL == BOARD_TBEAM

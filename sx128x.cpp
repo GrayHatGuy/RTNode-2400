@@ -136,7 +136,7 @@ bool sx128x::preInit() {
   
   // TODO: Check if this change causes issues on any platforms
   #if MCU_VARIANT == MCU_ESP32
-    #if BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_TDECK
+    #if BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_TWATCH_S3_PLUS
       SPI.begin(pin_sclk, pin_miso, pin_mosi, pin_cs);
     #else
       SPI.begin();

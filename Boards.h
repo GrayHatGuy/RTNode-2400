@@ -41,6 +41,7 @@
   #define MODEL_A2            0xA2 // RNode v2.1, 433 MHz
   #define MODEL_A7            0xA7 // RNode v2.1, 868 MHz
 
+  #define BOARD_TWATCH_S3_PLUS 0x4B // LilyGo T-Watch S3 Plus (SX1280, 2.4 GHz)
   #define BOARD_T3S3          0x42 // T3S3 devices
   #define MODEL_A1            0xA1 // T3S3, 433 MHz with SX1268
   #define MODEL_A5            0xA5 // T3S3, 433 MHz with SX1278
@@ -614,6 +615,72 @@
           const int pin_led_tx = 37;
         #endif
       #endif
+
+    #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+      // LilyGo T-Watch S3 Plus: ESP32-S3 + SX1280 (2.4 GHz).
+      // Pin mapping verified against both the LilyGoLib pins_arduino.h
+      // (T-Watch S3 variant with SX1280 module) and the Meshtastic
+      // t-watch-s3-plus variant.h — the two agreed on every pin.
+      //
+      // Important differences vs the BOARD_T3S3 SX1280 block above:
+      //   * NO external PA — power capped at 13 dBm (HAS_PA false).
+      //   * NO external RF switch — SX1280 module handles antenna
+      //     internally (no pin_rxen / pin_txen).
+      //   * NO TCXO — LilyGoLib factory firmware brings up this module
+      //     with plain radio.begin(), running on internal XTAL. Setting
+      //     HAS_TCXO=true here would tell RNode's sx128x driver to wait
+      //     for a TCXO-ready signal that never arrives, hanging init.
+      //   * NO separate SD wiring — SD shares the LoRa SPI bus.
+      #define IS_ESP32S3 true
+      #define HAS_CONSOLE false
+      #define HAS_WIFI true
+      #define HAS_BLUETOOTH false
+      #ifdef BOUNDARY_MODE
+        #define HAS_BLE false
+      #else
+        #define HAS_BLE true
+      #endif
+
+      // Display + PMU are present on the hardware (ST7789 240x240 +
+      // AXP2101) but not wired into RNode yet — wiring them needs
+      // per-board init in Display.h (ST7789 doesn't implement the
+      // SSD1306 clearDisplay()/display() API the render loop assumes)
+      // and Power.h (XPowersLib AXP2101 bringup). Both left as TODOs.
+      #define HAS_DISPLAY false
+      #define HAS_PMU false
+      #define HAS_NP false
+      #define HAS_SD false
+      #define HAS_EEPROM true
+
+      #define HAS_INPUT true
+      #define HAS_SLEEP true
+      #define PIN_WAKEUP GPIO_NUM_0
+      #define WAKEUP_LEVEL 0
+      const int pin_btn_usr1 = 0;
+
+      // SX1280 SPI + control pins.
+      #define CONFIG_QUEUE_SIZE 6144
+      #define DIO2_AS_RF_SWITCH false
+      #define HAS_BUSY true
+      #define HAS_TCXO false
+      const int pin_cs    = 5;
+      const int pin_reset = 8;
+      const int pin_sclk  = 3;
+      const int pin_mosi  = 1;
+      const int pin_miso  = 4;
+      const int pin_busy  = 7;
+      const int pin_dio   = 9;
+      const int pin_tcxo_enable = -1;
+
+      // AXP2101 PMU / RTC / sensors on I2C0 (informational; not driven
+      // by Power.h yet for this board).
+      #define I2C_SDA 10
+      #define I2C_SCL 11
+      #define PMU_IRQ 21
+
+      // No discrete RX/TX LEDs on T-Watch; route to no-ops.
+      const int pin_led_rx = -1;
+      const int pin_led_tx = -1;
 
     #elif BOARD_MODEL == BOARD_TDECK
       #define IS_ESP32S3 true
