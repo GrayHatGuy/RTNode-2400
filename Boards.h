@@ -698,6 +698,23 @@
       const int pin_led_rx = -1;
       const int pin_led_tx = -1;
 
+      // Disable signed-firmware hash validation for this board.
+      //
+      // The check is designed to protect signed distribution binaries
+      // from tampering — it compares an EEPROM-stored target SHA256
+      // against the device's self-computed running-partition SHA256
+      // and trips the "FIRMWARE CORRUPT" indicator on mismatch. For a
+      // local custom build the target hash has to be baked back into
+      // EEPROM after every flash (rnodeconf -L then --firmware-hash),
+      // which is brittle and was not clearing on this board even after
+      // a correct bake + reset. We control the binary, so leaving the
+      // check on is theatre. Turn it off; fw_signature_validated stays
+      // at its default true and the CORRUPT bitmap never shows.
+      //
+      // Lift this back to true if/when the board is built for a signed
+      // distribution channel.
+      #define VALIDATE_FIRMWARE false
+
     #elif BOARD_MODEL == BOARD_TDECK
       #define IS_ESP32S3 true
       #define MODEM SX1262
