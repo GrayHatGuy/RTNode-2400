@@ -1302,6 +1302,44 @@ extern bool display_lock_white;
 #endif
 
 void update_display(bool blank = false) {
+  // T-Watch S3 Plus battery readout panel. The upstream battery glyph
+  // is a 17x7-pixel outline rendered inside the 128x64 canvas — far
+  // too small to read on a 240x240 LCD after the 1.875x scale blit.
+  // This draws a larger readable battery panel directly to the lower
+  // region of the panel (y >= 130, below the canvas blit zone) so it
+  // doesn't interfere with the RNode UI rendering above. Updates
+  // once per second.
+  #if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    static uint32_t _bat_disp_last = 0;
+    if (millis() - _bat_disp_last > 1000) {
+      _bat_disp_last = millis();
+      twatch_panel.fillRect(0, 130, 240, 100, ST77XX_BLACK);
+      twatch_panel.setTextColor(ST77XX_WHITE);
+
+      // Voltage + percent line (big)
+      twatch_panel.setTextSize(3);
+      twatch_panel.setCursor(8, 142);
+      twatch_panel.printf("%.2fV", battery_voltage);
+      twatch_panel.setCursor(140, 142);
+      twatch_panel.printf("%3.0f%%", battery_percent);
+
+      // State line (smaller)
+      twatch_panel.setTextSize(2);
+      twatch_panel.setCursor(8, 192);
+      if (!battery_installed) {
+        twatch_panel.print("NO BATTERY");
+      } else if (battery_state == BATTERY_STATE_CHARGING) {
+        twatch_panel.print("CHARGING");
+      } else if (battery_state == BATTERY_STATE_CHARGED) {
+        twatch_panel.print("FULL");
+      } else if (battery_state == BATTERY_STATE_DISCHARGING) {
+        twatch_panel.print("ON BATTERY");
+      } else {
+        twatch_panel.print("--");
+      }
+    }
+  #endif
+
   #ifdef FIREWALL_MODE
   if (display_lock_white) return;
   #endif

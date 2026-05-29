@@ -414,6 +414,7 @@ void update_pmu() {
     measure_battery();
     measure_temperature();
     last_pmu_update = millis();
+
   }
 }
 
