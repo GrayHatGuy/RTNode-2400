@@ -632,7 +632,9 @@
       //     for a TCXO-ready signal that never arrives, hanging init.
       //   * NO separate SD wiring — SD shares the LoRa SPI bus.
       #define IS_ESP32S3 true
-      #define HAS_CONSOLE false
+      // HAS_CONSOLE gates RTNode's WiFi config portal (Console.h:
+      // softAP + SPIFFS-served pages). Match the T3S3 default of on.
+      #define HAS_CONSOLE true
       #define HAS_WIFI true
       #define HAS_BLUETOOTH false
       #ifdef BOUNDARY_MODE
