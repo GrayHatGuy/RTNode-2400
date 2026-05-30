@@ -25,6 +25,7 @@
     #include <Adafruit_ST7789.h>
   #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
     #include <Adafruit_ST7789.h>
+    #include <Wire.h>   // Wire1 drives the FT6X36 capacitive touch panel
   #elif BOARD_MODEL == BOARD_HELTEC_T114
     #include "ST7789.h"
     #define COLOR565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
@@ -256,6 +257,71 @@ int p_as_y = 0;
 GFXcanvas1 stat_area(64, 64);
 GFXcanvas1 disp_area(64, 64);
 
+#if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+// --- FT6X36 capacitive touch (READ-ONLY) -------------------------------
+// T-Watch S3 Plus touch is an FT6X36 on a dedicated I2C bus (Wire1),
+// pins TP_SDA(39)/TP_SCL(40), interrupt on TP_INT(16). We ONLY read
+// registers. The controller shares the display rail (ALDO3, already on);
+// no AXP2101 rail is ever touched here. The SX1280 sits on ALDO4 and is
+// completely outside this code path. Confirmed against LilyGoLib
+// LilyGoWatchS3.cpp (touch.begin(Wire1, FT6X36_SLAVE_ADDRESS, ...)).
+#define FT6X36_ADDR          0x38
+#define FT6X36_REG_NUMTOUCH  0x02   // followed by P1: XH,XL,YH,YL
+
+bool     twatch_touch_ok   = false;
+uint32_t twatch_touch_last = 0;     // debounce: last accepted touch (ms)
+// Current panel rotation. Must stay LANDSCAPE (0 or 2) — PORTRAIT (1/3)
+// pushes stat_area outside the 128x64 canvas and the icons clip away
+// (see display_init). The on-screen ROT button flips between 2 and 0.
+uint8_t  twatch_rotation   = 2;     // matches display_init default
+
+// bt_start/bt_stop live in Bluetooth.h, which Utilities.h includes AFTER
+// Display.h — forward-declare so the BT glyph can toggle the radio. Only
+// present when BT is compiled in (base env: HAS_BLE; boundary has it off).
+#if HAS_BLE == true || HAS_BLUETOOTH == true
+  void bt_start();
+  void bt_stop();
+#endif
+
+void twatch_touch_init() {
+  Wire1.begin(TP_SDA, TP_SCL);
+  Wire1.setClock(400000);
+  pinMode(TP_INT, INPUT_PULLUP);
+  // A bare address ACK is enough to confirm presence; the FT6X36 reports
+  // points without any configuration writes.
+  Wire1.beginTransmission(FT6X36_ADDR);
+  twatch_touch_ok = (Wire1.endTransmission() == 0);
+}
+
+// Reads the first touch point. Returns true and fills x,y in panel
+// coordinates (0..239) when a finger is down. Orientation is mapped to
+// match the panel's setRotation(2) frame used for direct twatch_panel
+// draws (origin top-left as the battery readout is drawn).
+bool twatch_touch_read(uint16_t *x, uint16_t *y) {
+  if (!twatch_touch_ok) return false;
+  Wire1.beginTransmission(FT6X36_ADDR);
+  Wire1.write(FT6X36_REG_NUMTOUCH);
+  if (Wire1.endTransmission(false) != 0) return false;
+  if (Wire1.requestFrom(FT6X36_ADDR, 5) != 5) return false;
+  uint8_t n  = Wire1.read() & 0x0F;
+  uint8_t xh = Wire1.read();
+  uint8_t xl = Wire1.read();
+  uint8_t yh = Wire1.read();
+  uint8_t yl = Wire1.read();
+  if (n == 0 || n > 5) return false;
+  uint16_t rx = (((uint16_t)(xh & 0x0F)) << 8) | xl;
+  uint16_t ry = (((uint16_t)(yh & 0x0F)) << 8) | yl;
+  if (rx > 239) rx = 239;
+  if (ry > 239) ry = 239;
+  // Map raw (rotation-0 physical frame) into the active draw frame. Only
+  // the two LANDSCAPE rotations are used. Verify/adjust on hardware if a
+  // future panel revision differs.
+  if (twatch_rotation == 2) { *x = 239 - rx; *y = 239 - ry; }
+  else                      { *x = rx;       *y = ry;       }
+  return true;
+}
+#endif
+
 static const uint8_t one_counts[256] = {
   0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  1,  1,  1,  1,
   1,  1,  1,  1,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,
@@ -428,6 +494,8 @@ bool display_init() {
       pinMode(DISPLAY_BL, OUTPUT);
       digitalWrite(DISPLAY_BL, HIGH);
       spiDisp.begin(DISPLAY_SCK, DISPLAY_MISO, DISPLAY_MOSI, DISPLAY_CS);
+      // Capacitive touch on the separate Wire1 bus (read-only, no rails).
+      twatch_touch_init();
     #endif
 
     #if HAS_EEPROM
@@ -569,6 +637,19 @@ bool display_init() {
       }
 
       update_area_positions();
+
+      #if BOARD_MODEL == BOARD_TWATCH_S3_PLUS && HAS_EEPROM
+        // Mirror the WiFi-portal screen-rotation setting (ADDR_CONF_DROT,
+        // written by FirewallConfig config_save) so the ROT button and the
+        // portal share one source of truth. Clamp to LANDSCAPE (0/2) since
+        // PORTRAIT (1/3) clips the stat_area icons on this board; also
+        // re-applies landscape if the stored value was portrait.
+        {
+          uint8_t _dr = EEPROM.read(eeprom_addr(ADDR_CONF_DROT));
+          twatch_rotation = (_dr == 0) ? 0 : 2;
+          twatch_panel.setRotation(twatch_rotation);
+        }
+      #endif
 
       for (int i = 0; i < WATERFALL_SIZE; i++) { waterfall[i] = 0; }
 
@@ -1301,42 +1382,253 @@ bool epd_blanked = false;
 extern bool display_lock_white;
 #endif
 
-void update_display(bool blank = false) {
-  // T-Watch S3 Plus battery readout panel. The upstream battery glyph
-  // is a 17x7-pixel outline rendered inside the 128x64 canvas — far
-  // too small to read on a 240x240 LCD after the 1.875x scale blit.
-  // This draws a larger readable battery panel directly to the lower
-  // region of the panel (y >= 130, below the canvas blit zone) so it
-  // doesn't interfere with the RNode UI rendering above. Updates
-  // once per second.
-  #if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
-    static uint32_t _bat_disp_last = 0;
-    if (millis() - _bat_disp_last > 1000) {
-      _bat_disp_last = millis();
-      twatch_panel.fillRect(0, 130, 240, 100, ST77XX_BLACK);
-      twatch_panel.setTextColor(ST77XX_WHITE);
+#if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+// ===================================================================
+// T-Watch S3 Plus native status panel (region y >= TW_PANEL_Y).
+// The upstream 128x64 UI blits into the top 240x128 of the panel at
+// 1.875x scale, which renders the status glyphs unreadably small. We
+// own the region below it and draw large, touch-navigable status pages
+// straight to twatch_panel at native resolution.
+//   - Touch advances pages (also auto-advances on a timer).
+//   - An on-screen OFF target blanks the backlight via GPIO DISPLAY_BL
+//     ONLY — never an AXP2101 rail (SX1280 lives on ALDO4, untouched).
+//   - Any touch wakes the screen when blanked.
+// ===================================================================
+#define TW_PANEL_Y   128
+#define TW_DIM       0x4208            // dim grey for inactive glyphs
+uint8_t   twatch_page          = 0;
+bool      twatch_display_off   = false;
+bool      twatch_touch_held    = false;
+bool      twatch_dirty         = true;
+uint32_t  twatch_page_flip     = 0;
+const int twatch_page_interval = 6000; // ms between auto-advances
 
-      // Voltage + percent line (big)
-      twatch_panel.setTextSize(3);
-      twatch_panel.setCursor(8, 142);
-      twatch_panel.printf("%.2fV", battery_voltage);
-      twatch_panel.setCursor(140, 142);
-      twatch_panel.printf("%3.0f%%", battery_percent);
+uint8_t twatch_page_count() {
+  #if defined(FIREWALL_MODE) && HAS_WIFI
+    return 4;   // Connectivity / Radio / Battery / Network
+  #else
+    return 3;   // Connectivity / Radio / Battery
+  #endif
+}
 
-      // State line (smaller)
-      twatch_panel.setTextSize(2);
-      twatch_panel.setCursor(8, 192);
-      if (!battery_installed) {
-        twatch_panel.print("NO BATTERY");
-      } else if (battery_state == BATTERY_STATE_CHARGING) {
-        twatch_panel.print("CHARGING");
-      } else if (battery_state == BATTERY_STATE_CHARGED) {
-        twatch_panel.print("FULL");
-      } else if (battery_state == BATTERY_STATE_DISCHARGING) {
-        twatch_panel.print("ON BATTERY");
-      } else {
-        twatch_panel.print("--");
+// Blit a 16x16 1-bpp glyph (bm + frame*32) to the panel at integer
+// scale `s`, origin (ox,oy). Set bits in `color`; clears the bounding
+// box first so stale pixels don't linger.
+void twatch_glyph16(const uint8_t *bm, int ox, int oy, int s, uint16_t color) {
+  twatch_panel.fillRect(ox, oy, 16*s, 16*s, ST77XX_BLACK);
+  for (int row = 0; row < 16; row++) {
+    const uint8_t *r = bm + row*2;
+    for (int col = 0; col < 16; col++) {
+      if (r[col >> 3] & (0x80 >> (col & 7))) {
+        twatch_panel.fillRect(ox + col*s, oy + row*s, s, s, color);
       }
+    }
+  }
+}
+
+void twatch_draw_offbtn() {
+  twatch_panel.drawRoundRect(176, 206, 60, 30, 6, ST77XX_WHITE);
+  twatch_panel.setTextColor(ST77XX_WHITE);
+  twatch_panel.setTextSize(2);
+  twatch_panel.setCursor(186, 213);
+  twatch_panel.print("OFF");
+}
+
+// FLIP button — battery page only. Sits just left of the OFF button and
+// flips the panel 180° (rotation 2 <-> 0, both LANDSCAPE; this board has
+// no usable portrait orientation, so it's a flip, not a free rotate).
+void twatch_draw_flipbtn() {
+  twatch_panel.drawRoundRect(108, 206, 60, 30, 6, ST77XX_WHITE);
+  twatch_panel.setTextColor(ST77XX_WHITE);
+  twatch_panel.setTextSize(2);
+  twatch_panel.setCursor(114, 213);
+  twatch_panel.print("FLIP");
+}
+
+void twatch_draw_dots(uint8_t page, uint8_t count) {
+  for (uint8_t i = 0; i < count; i++) {
+    twatch_panel.fillCircle(12 + i*16, 224, 4, (i == page) ? ST77XX_WHITE : TW_DIM);
+  }
+}
+
+void twatch_render_status() {
+  twatch_panel.fillRect(0, TW_PANEL_Y, 240, 240 - TW_PANEL_Y, ST77XX_BLACK);
+  twatch_panel.setTextColor(ST77XX_WHITE);
+  uint8_t pages = twatch_page_count();
+  if (twatch_page >= pages) twatch_page = 0;
+
+  if (twatch_page == 0) {
+    // ---- Connectivity: USB / BT / LORA / WiFi ----
+    const int s = 2, y = TW_PANEL_Y + 6, x0 = 6, step = 58;
+    bool usb_on  = (cable_state == CABLE_STATE_CONNECTED);
+    bool bt_on   = (bt_state == BT_STATE_CONNECTED || bt_state == BT_STATE_ON);
+    bool wifi_on = false;
+    #if HAS_WIFI
+      wifi_on = wifi_is_connected();
+    #endif
+    uint8_t btf = (bt_state == BT_STATE_CONNECTED) ? 3 : (bt_on ? 1 : 0);
+    twatch_glyph16(bm_cable + (usb_on?1:0)*32,      x0 + 0*step, y, s, usb_on?ST77XX_WHITE:TW_DIM);
+    twatch_glyph16(bm_bt    + btf*32,               x0 + 1*step, y, s, bt_on?ST77XX_WHITE:TW_DIM);
+    twatch_glyph16(bm_rf    + (radio_online?1:0)*32, x0 + 2*step, y, s, radio_online?ST77XX_WHITE:TW_DIM);
+    twatch_glyph16(bm_wifi  + (wifi_on?1:0)*32,     x0 + 3*step, y, s, wifi_on?ST77XX_WHITE:TW_DIM);
+    twatch_panel.setTextSize(1);
+    const char *lbl[4] = {"USB", "BT", "LORA", "WIFI"};
+    for (int i = 0; i < 4; i++) {
+      twatch_panel.setCursor(x0 + i*step + 4, y + 16*s + 4);
+      twatch_panel.print(lbl[i]);
+    }
+  } else if (twatch_page == 1) {
+    // ---- Radio ----
+    twatch_panel.setTextSize(2);
+    twatch_panel.setCursor(6, TW_PANEL_Y + 6);
+    twatch_panel.printf("%.1f MHz", lora_freq / 1000000.0);
+    twatch_panel.setCursor(6, TW_PANEL_Y + 30);
+    twatch_panel.printf("SF%d BW%lu", (int)lora_sf, (unsigned long)(lora_bw/1000));
+    twatch_panel.setCursor(6, TW_PANEL_Y + 54);
+    // Real RSSI in dBm. last_rssi defaults to the -292 sentinel until a
+    // packet is decoded — show NA in that case.
+    if (!radio_online) {
+      twatch_panel.print("RADIO OFFLINE");
+    } else if (last_rssi <= S_RSSI_MIN - 50) {   // sentinel / no packet yet
+      twatch_panel.print("RSSI NA");
+    } else {
+      twatch_panel.printf("RSSI %d dBm", last_rssi);
+    }
+  } else if (twatch_page == 2) {
+    // ---- Battery: glyph (proportional fill + nub + charge bolt) ----
+    int pct = (int)battery_percent;
+    if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+    const int bx = 14, by = TW_PANEL_Y + 6, bw = 150, bh = 46;
+    bool charging = (battery_state == BATTERY_STATE_CHARGING);
+    uint16_t fillc = charging ? ST77XX_YELLOW
+                   : (pct <= 20 ? ST77XX_RED : ST77XX_GREEN);
+    // Body + positive-terminal nub
+    twatch_panel.drawRoundRect(bx, by, bw, bh, 4, ST77XX_WHITE);
+    twatch_panel.fillRect(bx + bw + 2, by + 14, 8, bh - 28, ST77XX_WHITE);
+    // Proportional charge fill
+    if (battery_installed) {
+      int innerw = ((bw - 8) * pct) / 100;
+      twatch_panel.fillRect(bx + 4, by + 4, innerw, bh - 8, fillc);
+    }
+    // Charge bolt overlay when charging
+    if (charging) {
+      int cxp = bx + bw/2, cyp = by + bh/2;
+      twatch_panel.fillTriangle(cxp+4, cyp-14, cxp-8, cyp+2, cxp+1, cyp+2, ST77XX_BLACK);
+      twatch_panel.fillTriangle(cxp-4, cyp+14, cxp+8, cyp-2, cxp-1, cyp-2, ST77XX_BLACK);
+    }
+    // Voltage / % / state line below the glyph
+    twatch_panel.setTextSize(2);
+    twatch_panel.setTextColor(ST77XX_WHITE);
+    twatch_panel.setCursor(bx, by + bh + 8);
+    if (!battery_installed) {
+      twatch_panel.print("NO BATTERY");
+    } else {
+      const char *st = charging ? "CHG"
+                     : (battery_state == BATTERY_STATE_CHARGED ? "FULL"
+                     : (battery_state == BATTERY_STATE_DISCHARGING ? "BATT" : ""));
+      twatch_panel.printf("%.2fV %d%% %s", battery_voltage, pct, st);
+    }
+  }
+  #if defined(FIREWALL_MODE) && HAS_WIFI
+  else if (twatch_page == 3) {
+    // ---- Network ----
+    twatch_panel.setTextSize(2);
+    twatch_panel.setCursor(6, TW_PANEL_Y + 6);
+    twatch_panel.print("WiFi IP");
+    twatch_panel.setCursor(6, TW_PANEL_Y + 34);
+    if (wifi_is_connected()) twatch_panel.print(wr_device_ip);
+    else                     twatch_panel.print("not connected");
+  }
+  #endif
+
+  twatch_draw_dots(twatch_page, pages);
+  twatch_draw_offbtn();
+  if (twatch_page == 2) twatch_draw_flipbtn();  // FLIP on battery page only
+}
+
+// Poll touch and act: wake when off, OFF target blanks, else advance page.
+void twatch_handle_touch() {
+  uint16_t tx, ty;
+  if (!twatch_touch_read(&tx, &ty)) { twatch_touch_held = false; return; }
+  if (twatch_touch_held) return;           // same continuous press
+  twatch_touch_held = true;
+  uint32_t now = millis();
+  if (now - twatch_touch_last < 200) return;   // debounce
+  twatch_touch_last = now;
+
+  if (twatch_display_off) {                // any touch wakes
+    twatch_display_off = false;
+    set_contrast(&display, display_intensity > 0 ? display_intensity : 0xFF);
+    last_unblank_event = now;
+    twatch_dirty = true;
+    return;
+  }
+  if (tx >= 176 && ty >= 206) {            // OFF target → blank backlight
+    twatch_display_off = true;
+    set_contrast(&display, 0);
+    return;
+  }
+  if (twatch_page == 2 && tx >= 108 && tx <= 168 && ty >= 206) {
+    // FLIP target (battery page) → flip 180° between LANDSCAPE rotations.
+    twatch_rotation = (twatch_rotation == 2) ? 0 : 2;
+    twatch_panel.setRotation(twatch_rotation);
+    twatch_panel.fillScreen(ST77XX_BLACK);   // clear stale pixels post-flip
+    #if HAS_EEPROM
+      // Persist to the same EEPROM slot the WiFi portal uses so the two
+      // stay in sync (mirrors eeprom_update's ESP32 write+commit, which
+      // isn't yet declared at this point in the include order).
+      if (EEPROM.read(eeprom_addr(ADDR_CONF_DROT)) != twatch_rotation) {
+        EEPROM.write(eeprom_addr(ADDR_CONF_DROT), twatch_rotation);
+        EEPROM.commit();
+      }
+    #endif
+    last_unblank_event = now;
+    twatch_dirty = true;
+    return;
+  }
+  #if HAS_BLE == true || HAS_BLUETOOTH == true
+  if (twatch_page == 0 && ty < 200 && tx >= 58 && tx < 116) {
+    // Connectivity page, BT glyph column → toggle Bluetooth on/off.
+    if (bt_state == BT_STATE_OFF) bt_start(); else bt_stop();
+    last_unblank_event = now;
+    twatch_dirty = true;
+    return;
+  }
+  #endif
+  twatch_page = (twatch_page + 1) % twatch_page_count();   // advance page
+  twatch_page_flip = now;
+  last_unblank_event = now;
+  twatch_dirty = true;
+}
+#endif
+
+void update_display(bool blank = false) {
+  // T-Watch S3 Plus native status panel + touch. The upstream UI blits
+  // into the top 240x128 of the panel at 1.875x scale (status glyphs
+  // unreadable); we draw large touch-navigable pages in the region below
+  // (see twatch_render_status). Touch advances pages and drives the
+  // on-screen OFF target / wake. Backlight is GPIO DISPLAY_BL only — no
+  // AXP2101 rail is ever touched here.
+  #if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    twatch_handle_touch();
+    if (twatch_display_off) {
+      // Blanked by touch: keep backlight off, skip our status region and
+      // the upstream UI blit below.
+      display_updating = false;
+      return;
+    }
+    // Auto-advance so the screen cycles even while the radio is online
+    // (upstream only cycles its diagnostic pages before radio_online).
+    if (millis() - twatch_page_flip > (uint32_t)twatch_page_interval) {
+      twatch_page = (twatch_page + 1) % twatch_page_count();
+      twatch_page_flip = millis();
+      twatch_dirty = true;
+    }
+    static uint32_t _tw_status_last = 0;
+    if (twatch_dirty || millis() - _tw_status_last > 400) {
+      _tw_status_last = millis();
+      twatch_dirty = false;
+      twatch_render_status();
     }
   #endif
 

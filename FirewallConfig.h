@@ -73,6 +73,10 @@ static uint8_t config_default_display_rotation() {
     return 0;
     #elif BOARD_MODEL == BOARD_HELTEC32_V2 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TBEAM_S_V1
     return 1;
+    #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    // Landscape only — portrait (1/3) clips the stat_area icons on this
+    // board (see Display.h). Runtime FLIP button toggles 2<->0.
+    return 2;
     #else
     return 3;
     #endif
@@ -479,6 +483,19 @@ static void config_send_html() {
     html += F("<p class='note'>Turn off display after inactivity to save power</p>");
 
     html += F("<label>Display Orientation</label><select name='disp_rot'>");
+#if BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+    // Landscape only — portrait (1/3) clips the stat_area icons on this
+    // board. Runtime rotation is done with the on-screen FLIP button.
+    html += F("<option value='0'");
+    if (cur_rotation == 0) html += F(" selected");
+    html += F(">Landscape</option>");
+    html += F("<option value='2'");
+    if (cur_rotation != 0) html += F(" selected");
+    html += F(">Landscape Flipped</option>");
+    html += F("</select>");
+    html += F("<p class='note'>This board is landscape-only; portrait clips the status icons. "
+              "Use the on-screen FLIP button (battery page) to rotate 180&deg; at runtime.</p>");
+#else
     html += F("<option value='0'");
     if (cur_rotation == 0) html += F(" selected");
     html += F(">Landscape</option>");
@@ -494,6 +511,7 @@ static void config_send_html() {
     html += F("</select>");
     html += F("<p class='note'>Choose the orientation that matches your OLED mounting. "
               "Landscape modes place the two status panes side by side; portrait modes stack them.</p>");
+#endif
 
     // ── Submit ──
     html += F(
