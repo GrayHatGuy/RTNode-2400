@@ -842,7 +842,14 @@
       #define HAS_CONSOLE true
       #define HAS_WIFI true
       #define HAS_BLUETOOTH false
-      #define HAS_BLE true
+      #ifdef FIREWALL_MODE
+        // Firewall nodes use WiFi/TCP, not BLE. Disabling BLE here matches
+        // the T3-S3/T-Watch firewall pattern and avoids compiling
+        // BLESerial.cpp/Bluetooth.h (classic-BT API removed in arduino-esp32 3.x).
+        #define HAS_BLE false
+      #else
+        #define HAS_BLE true
+      #endif
       #define HAS_NP false
       #define HAS_SD false
       #define HAS_EEPROM true
