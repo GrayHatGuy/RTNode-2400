@@ -626,10 +626,14 @@
       //   * NO external PA — power capped at 13 dBm (HAS_PA false).
       //   * NO external RF switch — SX1280 module handles antenna
       //     internally (no pin_rxen / pin_txen).
-      //   * NO TCXO — LilyGoLib factory firmware brings up this module
-      //     with plain radio.begin(), running on internal XTAL. Setting
-      //     HAS_TCXO=true here would tell RNode's sx128x driver to wait
-      //     for a TCXO-ready signal that never arrives, hanging init.
+      //   * SX1280 has NO TCXO — LilyGoLib factory firmware brings up that
+      //     module with plain radio.begin(), running on internal XTAL.
+      //     Setting HAS_TCXO=true for SX1280 would tell RNode's sx128x
+      //     driver to wait for a TCXO-ready signal that never arrives,
+      //     hanging init. The SX1262 module on the T-Watch S3 family DOES
+      //     use a TCXO (DIO3-controlled), so HAS_TCXO is keyed on MODEM
+      //     below. Both the T-Watch S3 and S3 Plus share this radio/TCXO
+      //     wiring (LilyGoLib distinguishes the two only by GPS presence).
       //   * NO separate SD wiring — SD shares the LoRa SPI bus.
       #define IS_ESP32S3 true
       // HAS_CONSOLE gates RTNode's WiFi config portal (Console.h:
@@ -672,7 +676,13 @@
       #define CONFIG_QUEUE_SIZE 6144
       #define DIO2_AS_RF_SWITCH false
       #define HAS_BUSY true
-      #define HAS_TCXO false
+      // SX1262 module uses a TCXO (via the radio's DIO3, RadioLib/LilyGoLib
+      // default 1.6V); stock SX1280 runs on internal XTAL with no TCXO.
+      #if MODEM == SX1262
+        #define HAS_TCXO true
+      #else
+        #define HAS_TCXO false
+      #endif
       const int pin_cs    = 5;
       const int pin_reset = 8;
       const int pin_sclk  = 3;

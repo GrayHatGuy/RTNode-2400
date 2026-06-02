@@ -715,6 +715,10 @@ void sx126x::enableTCXO() {
       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
     #elif BOARD_MODEL == BOARD_HELTEC32_V4
       uint8_t buf[4] = {MODE_TCXO_1_8V_6X, 0x00, 0x00, 0xFF};
+    #elif BOARD_MODEL == BOARD_TWATCH_S3_PLUS
+      // LilyGo T-Watch S3 family SX1262: DIO3-controlled TCXO at 1.6V
+      // (RadioLib/LilyGoLib factory default — radio.begin() with no args).
+      uint8_t buf[4] = {MODE_TCXO_1_6V_6X, 0x00, 0x00, 0xFF};
     #endif
     executeOpcode(OP_DIO3_TCXO_CTRL_6X, buf, 4);
   #endif
