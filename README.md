@@ -246,7 +246,15 @@ When active, the device creates a WiFi access point named **`RNode-Boundary-Setu
 
 ### Config Page Options
 
-The web form has four sections:
+The web form has five sections:
+
+#### 🌐 Local Network Name (mDNS)
+Publishes the device on the local network so it is reachable as `<name>.local` from any device in your LAN.
+Disable if you want to suppress all multicast announcements
+| Field | Description |
+|-------|-------------|
+| **mDNS** | Enable/Disable |
+| **Hostname** | Local Lan Hostname (leave blank to default to`rtnode<XXXX>.local`) |
 
 #### 📶 WiFi Network
 | Field | Description |
