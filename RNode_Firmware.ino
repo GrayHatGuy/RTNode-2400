@@ -938,6 +938,15 @@ void setup() {
           HEAD(_bm_msg, RNS::LOG_TRACE);
         }
       }
+
+      // Safety check: backbone and local interfaces must never share a name,
+      // or Transport's interface map hash lookup will collide and break routing.
+      if (tcp_interface_ptr && local_tcp_interface_ptr) {
+        if (tcp_rns_interface.name() == local_tcp_rns_interface.name()) {
+          HEAD("FATAL: backbone and local TCP interface names collide!", RNS::LOG_ERROR);
+          while (true) { delay(1000); }
+        }
+      }
 #endif
 
       // Feed WDT before Reticulum instance creation (loads caches, generates keys)

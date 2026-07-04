@@ -364,7 +364,7 @@ Local TCP clients should be endpoint clients, not transport routers. If an appli
 *Note: Only firewall mode has been verified on Xiao esp32s3 and Lilygo T3S3.*
 
 **Implementation details:**
-- Each TCP interface must have a **unique name** to produce a unique interface hash — the backbone uses `"TcpInterface"` and the local server uses `"LocalTcpInterface"`. Without distinct names, both interfaces produce the same hash, causing the interface map lookup to fail when routing packets.
+- Each TCP interface must have a **unique name** to produce a unique interface hash — the backbone uses `"BackboneInterface"` and the local server uses `"LocalTcpInterface"`. Without distinct names, both interfaces produce the same hash, causing the interface map lookup to fail when routing packets.
 - TCP interfaces are configured with a **10 Mbps bitrate**, which causes Reticulum's Transport to prefer TCP paths over LoRa paths (typically ~1–10 kbps) when both are available for the same destination.
 - When the Local TCP Server is disabled, its status indicator (LAN) and port number are hidden from the OLED display.
 
@@ -450,7 +450,7 @@ This was fixed by calling `erase()` before `insert()`, ensuring updated path ent
 
 Each RNS interface must have a **unique name** because the name is hashed to produce the interface identifier used in path table lookups. If two interfaces share the same name, they produce the same hash, and `std::map` can only store one — causing the Transport layer to fail to resolve the correct outbound interface for packets.
 
-The TcpInterface constructor accepts an explicit `name` parameter: the backbone uses `"TcpInterface"` and the local server uses `"LocalTcpInterface"`.
+The TcpInterface constructor accepts an explicit `name` parameter: the backbone uses `"BackboneInterface"` and the local server uses `"LocalTcpInterface"`.
 
 ## Connecting to the Backbone
 
