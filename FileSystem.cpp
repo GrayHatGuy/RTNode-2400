@@ -291,7 +291,11 @@ void FileSystem::dumpDir(const char* dir) {
 		file.close();
 	}
 	else {
-		ERRORF("read_file: failed to open input file %s", file_path);
+		if (FS.exists(file_path)) {
+			ERRORF("read_file: failed to open input file %s", file_path);
+		} else {
+			TRACEF("read_file: file %s does not exist (expected on first use)", file_path);
+		}
 	}
     return read;
 }

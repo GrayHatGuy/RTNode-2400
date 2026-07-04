@@ -174,11 +174,18 @@ public:
         if (_mode == TCP_IF_MODE_CLIENT && _num_clients == 0) {
             uint32_t now = millis();
             if (now - _last_reconnect >= _reconnect_interval) {
+                // Always mark this attempt as having happened, regardless of
+                // outcome. Previously this was only set in the "WiFi not
+                // connected" branch — when WiFi WAS connected, _connect_client()
+                // could return immediately (e.g. no target host configured)
+                // without ever reaching the timer-reset code inside it, so the
+                // gate above stayed permanently satisfied and this block ran
+                // on every single loop() iteration — an unthrottled busy-loop
+                // that also flooded Serial, which can block the whole loop()
+                // if nothing is draining the USB serial buffer.
+                _last_reconnect = now;
                 if (WiFi.status() == WL_CONNECTED) {
                     _connect_client();
-                } else {
-                    // WiFi not connected — skip TCP attempt, just update timer
-                    _last_reconnect = now;
                 }
             }
         }
@@ -410,9 +417,17 @@ private:
     // ─── Client-mode outbound connection ─────────────────────────────────────
     void _connect_client() {
         if (_target_host[0] == '\0') {
-            Serial.println("[TcpIF] No target host configured for client mode");
+            // Static misconfiguration — retrying won't fix it, so don't log
+            // it every attempt forever. Log once until the target host is
+            // actually set (start() or a config change calls _connect_client()
+            // again, which will re-arm this if still unset).
+            if (!_no_host_warned) {
+                Serial.println("[TcpIF] No target host configured for client mode");
+                _no_host_warned = true;
+            }
             return;
         }
+        _no_host_warned = false;
 
         WiFiClient client;
         client.setTimeout(TCP_IF_CONNECT_TIMEOUT / 1000);
@@ -489,6 +504,7 @@ private:
     TcpIfMode   _mode;
     uint16_t    _port;
     char        _target_host[64];
+    bool        _no_host_warned = false;
     uint16_t    _target_port;
     WiFiServer* _server;
     TcpClient   _clients[TCP_IF_MAX_CLIENTS];

@@ -1557,6 +1557,10 @@ static bool is_boundary_address_packet(const Packet& packet) {
 			}
 			else {
 				if (is_announce) {
+					if (packet.hops() > 0) {
+						DEBUG("BOUNDARY: BLOCKED relayed announce from LAN (not genuine local origin) dest=" + packet.destination_hash().toHex().substr(0,8) + " hops=" + std::to_string(packet.hops()));
+						return;
+					}
 					_boundary_local_addresses.insert(packet.destination_hash());
 				}
 				else {
